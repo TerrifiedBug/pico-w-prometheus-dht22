@@ -53,7 +53,7 @@ OTA_CONFIG = {
     "auto_check": True,  # Automatically check for updates
     "check_interval": 3600,  # Seconds between update checks (1 hour)
     "github_repo": {
-        "owner": "yourusername",  # Replace with your GitHub username
+        "owner": "TerrifiedBug",  # Replace with your GitHub username
         "name": "pico-w-prometheus-dht22",
         "branch": "main",
     },
