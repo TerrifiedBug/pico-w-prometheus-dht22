@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s # By default, scrape targets every 15 seconds.
+
+scrape_configs:
+  # Pico Sensors
+  - job_name: "pico_sensors"
+    static_configs:
+      - targets: ["ip:80"]
+        labels:
+          location: office
