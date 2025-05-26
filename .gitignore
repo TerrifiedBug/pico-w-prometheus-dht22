@@ -6,3 +6,6 @@ version.txt
 
 # Local configuration overrides (device-specific)
 config.local.py
+
+# Ensure version.txt stays separate between branches
+version.txt
