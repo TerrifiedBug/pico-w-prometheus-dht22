@@ -1,4 +1,4 @@
-# pico-w-temperature-metrics
+# pico-w-prometheus-dht22
 
 A lightweight MicroPython-based HTTP server for the Raspberry Pi Pico W that exposes DHT22 sensor readings (temperature and humidity) as Prometheus-compatible metrics.
 
