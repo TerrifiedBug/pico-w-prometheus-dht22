@@ -51,16 +51,16 @@ def read_dht22():
 
 
 # HTTP Server (Prometheus-style)
-def format_metrics(temp, hum):
+def format_metrics(temperature, humidity):
     from config import METRIC_NAMES
 
     return (
         f"# HELP {METRIC_NAMES['temperature']} Temperature in Celsius\n"
         f"# TYPE {METRIC_NAMES['temperature']} gauge\n"
-        f"{METRIC_NAMES['temperature']} {temp}\n"
+        f"{METRIC_NAMES['temperature']} {temperature}\n"
         f"# HELP {METRIC_NAMES['humidity']} Humidity in Percent\n"
         f"# TYPE {METRIC_NAMES['humidity']} gauge\n"
-        f"{METRIC_NAMES['humidity']} {hum}\n"
+        f"{METRIC_NAMES['humidity']} {humidity}\n"
     )
 
 
