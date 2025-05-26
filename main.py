@@ -203,8 +203,21 @@ while True:
         request = cl.recv(1024)
         request_line = request.decode().split("\r\n")[0]
 
-        # Route requests to appropriate handlers
-        if f"GET {METRICS_ENDPOINT}" in request_line:
+        # Extract the path from the request line for exact matching
+        try:
+            request_parts = request_line.split()
+            if len(request_parts) >= 2:
+                method = request_parts[0]
+                path = request_parts[1]
+            else:
+                method = ""
+                path = ""
+        except:
+            method = ""
+            path = ""
+
+        # Route requests to appropriate handlers using exact path matching
+        if method == "GET" and path == METRICS_ENDPOINT:
             # Prometheus metrics endpoint
             temp, hum = read_dht22()
             if temp is not None:
@@ -215,22 +228,22 @@ while True:
                 cl.send("HTTP/1.0 500 Internal Server Error\r\n\r\n")
                 cl.send("Sensor error")
 
-        elif "GET /update" in request_line:
-            # OTA update endpoint
-            response = handle_update_request()
-            cl.send(response)
-
-        elif "GET /update/status" in request_line:
-            # Update status endpoint
+        elif method == "GET" and path == "/update/status":
+            # Update status endpoint - check this BEFORE /update
             response = handle_update_status()
             cl.send(response)
 
-        elif "GET /health" in request_line:
+        elif method == "GET" and path == "/update":
+            # OTA update endpoint - exact match only
+            response = handle_update_request()
+            cl.send(response)
+
+        elif method == "GET" and path == "/health":
             # Health check endpoint
             response = handle_health_check()
             cl.send(response)
 
-        elif "GET /" in request_line and request_line.strip() == "GET / HTTP/1.1":
+        elif method == "GET" and path == "/":
             # Root endpoint - show available endpoints
             endpoints_info = f"""Available endpoints:
 {METRICS_ENDPOINT} - Prometheus metrics
@@ -244,7 +257,7 @@ while True:
         else:
             # 404 for unknown endpoints
             cl.send("HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\n")
-            cl.send("Endpoint not found")
+            cl.send(f"Endpoint not found: {method} {path}")
 
         cl.close()
 

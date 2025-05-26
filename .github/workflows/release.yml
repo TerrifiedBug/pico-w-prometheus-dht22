@@ -22,33 +22,50 @@ jobs:
           body: |
             ## 🚀 New Release ${{ github.ref_name }}
 
+            ### 🐛 Critical Bug Fixes
+            - **Fixed dangerous HTTP routing bug** - Endpoints now work correctly and securely
+            - **Proper endpoint separation** - `/update/status` and `/update` now behave as intended
+            - **Security improvement** - Only exact `/update` path triggers updates (no more accidental updates from typos)
+            - **Better error handling** - Proper 404 responses for invalid URLs
+
             ### 📦 Files for Pico W
 
             The following files should be uploaded to your Pico W:
-            - `main.py` - Main application
+            - `main.py` - Main application (⚠️ **UPDATED** - contains critical routing fixes)
             - `config.py` - Configuration settings
             - `ota_updater.py` - OTA update functionality
             - `secrets.py` - WiFi credentials (create from secrets.py.example)
-            - `version.txt` - Version tracking
+            - `version.txt` - Version tracking (updated to 1.0.1)
 
             ### 🔄 OTA Update
 
             If you have OTA enabled, you can update by visiting:
             `http://your-pico-ip/update`
 
+            **Note**: This release fixes critical routing issues. Update recommended for all users.
+
             ### 🛠️ Manual Installation
 
             1. Copy the files above to your Pico W
-            2. Update `config.py` with your GitHub username
+            2. Update `config.py` with your GitHub username (`TerrifiedBug`)
             3. Create `secrets.py` from the example file
             4. Restart your Pico W
 
-            ### 📊 What's New
+            ### ✅ Endpoint Behavior (Fixed)
 
-            - Enhanced OTA update system
-            - Improved error handling and logging
-            - Better configuration management
-            - Additional HTTP endpoints for monitoring
+            - `GET /metrics` - Prometheus metrics
+            - `GET /health` - Health check and version info
+            - `GET /update/status` - Update status (now works correctly)
+            - `GET /update` - Trigger OTA update (exact match only)
+            - `GET /` - List available endpoints
+            - Invalid URLs now return proper 404 errors
+
+            ### 🔧 Technical Changes
+
+            - Implemented exact HTTP path matching instead of substring matching
+            - Fixed routing order to prevent `/update/status` conflicts
+            - Added proper request parsing with error handling
+            - Enhanced security to prevent accidental update triggers
 
           draft: false
           prerelease: false
