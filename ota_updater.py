@@ -75,9 +75,64 @@ class GitHubOTAUpdater:
         with open("version.txt", "w") as f:
             f.write(version)
 
+    def _get_headers(self):
+        """
+        Get HTTP headers for GitHub API requests.
+
+        Returns:
+            dict: Headers to include in requests.
+        """
+        return {
+            'User-Agent': 'Pico-W-OTA-Client/1.0',
+            'Accept': 'application/vnd.github.v3+json',
+            'Accept-Encoding': 'identity'  # Avoid compression issues
+        }
+
+    def _make_request(self, url, headers=None, timeout=30):
+        """
+        Make HTTP request with proper error handling and logging.
+
+        Args:
+            url (str): URL to request
+            headers (dict): Optional headers
+            timeout (int): Request timeout in seconds
+
+        Returns:
+            tuple: (success, response_or_error)
+        """
+        if headers is None:
+            headers = self._get_headers()
+
+        try:
+            print(f"Requesting: {url}")
+            print(f"Headers: {headers}")
+
+            response = urequests.get(url, headers=headers)
+
+            print(f"Response status: {response.status_code}")
+            if hasattr(response, 'headers'):
+                print(f"Response headers: {dict(response.headers)}")
+
+            if response.status_code == 200:
+                return True, response
+            else:
+                error_text = ""
+                try:
+                    error_text = response.text[:200]  # First 200 chars of error
+                except:
+                    error_text = "Unable to read error response"
+
+                print(f"HTTP {response.status_code} error: {error_text}")
+                response.close()
+                return False, f"HTTP {response.status_code}: {error_text}"
+
+        except Exception as e:
+            print(f"Request failed: {e}")
+            return False, str(e)
+
     def check_for_updates(self):
         """
-        Check GitHub for newer releases.
+        Check GitHub for newer releases with fallback mechanisms.
 
         Returns:
             tuple: (has_update, new_version, release_info) where:
@@ -89,14 +144,21 @@ class GitHubOTAUpdater:
             print("Checking for updates...")
             url = f"{self.api_base}/releases/latest"
 
-            response = urequests.get(url)
-            if response.status_code != 200:
-                print(f"Failed to check updates: HTTP {response.status_code}")
-                response.close()
-                return False, None, None
+            # Try API endpoint with proper headers
+            success, response_or_error = self._make_request(url)
 
-            release_data = response.json()
-            response.close()
+            if not success:
+                print(f"API request failed: {response_or_error}")
+                # Try fallback method using raw files
+                return self._check_updates_fallback()
+
+            try:
+                release_data = response_or_error.json()
+                response_or_error.close()
+            except Exception as e:
+                print(f"Failed to parse JSON response: {e}")
+                response_or_error.close()
+                return self._check_updates_fallback()
 
             latest_version = release_data["tag_name"]
             current_version = self.get_current_version()
@@ -109,11 +171,56 @@ class GitHubOTAUpdater:
 
         except Exception as e:
             print(f"Update check failed: {e}")
+            return self._check_updates_fallback()
+
+    def _check_updates_fallback(self):
+        """
+        Fallback method to check for updates using raw GitHub files.
+
+        Returns:
+            tuple: (has_update, new_version, None)
+        """
+        try:
+            print("Trying fallback update check using raw files...")
+
+            # Try to get version from raw GitHub file
+            version_url = f"{self.raw_base}/{self.branch}/version.txt"
+
+            success, response_or_error = self._make_request(version_url)
+
+            if not success:
+                print(f"Fallback also failed: {response_or_error}")
+                return False, None, None
+
+            try:
+                latest_version = response_or_error.text.strip()
+                response_or_error.close()
+            except Exception as e:
+                print(f"Failed to read version from raw file: {e}")
+                response_or_error.close()
+                return False, None, None
+
+            current_version = self.get_current_version()
+
+            print(f"Fallback - Current version: {current_version}")
+            print(f"Fallback - Latest version: {latest_version}")
+
+            # Add 'v' prefix if not present for comparison
+            if not latest_version.startswith('v'):
+                latest_version = f"v{latest_version}"
+            if not current_version.startswith('v'):
+                current_version = f"v{current_version}"
+
+            has_update = latest_version != current_version
+            return has_update, latest_version, None
+
+        except Exception as e:
+            print(f"Fallback update check failed: {e}")
             return False, None, None
 
     def download_file(self, filename, target_dir=""):
         """
-        Download a file from GitHub.
+        Download a file from GitHub with improved error handling.
 
         Args:
             filename (str): Name of file to download.
@@ -126,19 +233,26 @@ class GitHubOTAUpdater:
             url = f"{self.raw_base}/{self.branch}/{filename}"
             print(f"Downloading {filename}...")
 
-            response = urequests.get(url)
-            if response.status_code != 200:
-                print(f"Failed to download {filename}: HTTP {response.status_code}")
-                response.close()
+            # Use improved request method with proper headers
+            success, response_or_error = self._make_request(url)
+
+            if not success:
+                print(f"Failed to download {filename}: {response_or_error}")
                 return False
 
-            target_path = f"{target_dir}/{filename}" if target_dir else filename
-            with open(target_path, "w") as f:
-                f.write(response.text)
+            try:
+                target_path = f"{target_dir}/{filename}" if target_dir else filename
+                with open(target_path, "w") as f:
+                    f.write(response_or_error.text)
 
-            response.close()
-            print(f"Downloaded {filename} successfully")
-            return True
+                response_or_error.close()
+                print(f"Downloaded {filename} successfully")
+                return True
+
+            except Exception as e:
+                print(f"Failed to write {filename}: {e}")
+                response_or_error.close()
+                return False
 
         except Exception as e:
             print(f"Download failed for {filename}: {e}")
