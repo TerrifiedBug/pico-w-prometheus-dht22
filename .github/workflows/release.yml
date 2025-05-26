@@ -7,6 +7,10 @@ on:
       - "dev-*" # Development releases (dev-20250526-1234, etc.)
     branches:
       - dev # Auto-create dev releases on push to dev branch
+    paths:
+      - "main.py"
+      - "config.py"
+      - "ota_updater.py"
   workflow_dispatch: # Allow manual triggering
 
 jobs:
@@ -35,19 +39,20 @@ jobs:
             echo "prerelease=true" >> $GITHUB_OUTPUT
             echo "release_name=Development Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == refs/heads/dev ]]; then
-            # Auto-generated dev release from branch push
+            # Always generate new dev version based on build timestamp
             DEV_VERSION="dev-$(date +%Y%m%d-%H%M%S)"
             echo "release_type=development" >> $GITHUB_OUTPUT
             echo "version=$DEV_VERSION" >> $GITHUB_OUTPUT
             echo "prerelease=true" >> $GITHUB_OUTPUT
             echo "release_name=Development Release $DEV_VERSION" >> $GITHUB_OUTPUT
             echo "auto_tag=true" >> $GITHUB_OUTPUT
+            echo "Generated new dev version: $DEV_VERSION"
           else
             echo "release_type=unknown" >> $GITHUB_OUTPUT
             exit 1
           fi
 
-      - name: Update version.txt for auto-generated dev releases
+      - name: Update version.txt for dev releases
         if: steps.release_info.outputs.auto_tag == 'true'
         run: |
           echo "${{ steps.release_info.outputs.version }}" > version.txt
