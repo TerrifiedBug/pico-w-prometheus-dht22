@@ -34,26 +34,52 @@ ssid = secrets["ssid"]
 password = secrets["pw"]
 rp2.country(WIFI_CONFIG["country_code"])
 
+def connect_wifi():
+    """
+    Connect to WiFi with improved error handling and retry logic.
+
+    Returns:
+        bool: True if connected successfully, False otherwise.
+    """
+    print("Connecting to Wi-Fi...")
+    wlan.connect(ssid, password)
+
+    max_wait = 20  # Increased timeout
+    while max_wait > 0:
+        status = wlan.status()
+
+        if status == 3:  # Connected
+            print("Connected, IP =", wlan.ifconfig()[0])
+            return True
+        elif status < 0:  # Error states (-1, -2, -3)
+            print(f"Connection failed with status {status}, retrying...")
+            wlan.disconnect()
+            time.sleep(2)
+            wlan.connect(ssid, password)
+            max_wait = 20  # Reset timeout for retry
+        else:
+            print(f"Connecting... (status: {status}, {max_wait}s remaining)")
+
+        max_wait -= 1
+        time.sleep(1)
+
+    # If we get here, connection failed
+    print("WiFi connection timeout")
+    return False
+
+
 wlan = network.WLAN(network.STA_IF)
 wlan.active(True)
-wlan.connect(ssid, password)
 
 # Optional: set static IP (adjust as needed)
 # wlan.ifconfig(('10.1.1.161','255.255.255.0','10.1.1.1','8.8.8.8'))
 
-print("Connecting to Wi-Fi...")
-max_wait = 10
-while max_wait > 0:
-    if wlan.status() >= 3:
-        break
-    print("Waiting for connection...")
-    max_wait -= 1
-    time.sleep(1)
-
-if wlan.status() != 3:
-    raise RuntimeError("Wi-Fi connection failed")
-else:
-    print("Connected, IP =", wlan.ifconfig()[0])
+# Connect with improved reliability
+if not connect_wifi():
+    print("Initial connection failed, trying once more...")
+    time.sleep(5)
+    if not connect_wifi():
+        raise RuntimeError("Wi-Fi connection failed after retries")
 
 # DHT22 Sensor Setup
 sensor = dht.DHT22(Pin(SENSOR_CONFIG["pin"]))
