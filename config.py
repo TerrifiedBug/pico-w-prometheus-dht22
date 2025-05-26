@@ -63,7 +63,7 @@ OTA_CONFIG = {
     "github_repo": {
         "owner": "TerrifiedBug",  # Replace with your GitHub username
         "name": "pico-w-prometheus-dht22",
-        "branch": "main",
+        "branch": "dev",
     },
     "backup_enabled": True,  # Backup files before update
     "max_backup_versions": 3,  # Keep N backup versions
