@@ -48,13 +48,9 @@ pico-w-prometheus-dht22/
 ├── configs/                          # External configuration files
 │   ├── prometheus.yml                # Prometheus scrape config
 │   └── grafana-dashboard.json        # Grafana dashboard template
-├── internal-docs/                    # Technical documentation
-│   └── OTA_IMPLEMENTATION_GUIDE.md   # Detailed OTA system docs
 ├── .github/                          # GitHub Actions workflows
 │   └── workflows/
 │       └── release.yml               # Automated release creation
-├── backup/                           # Auto-created backup directory
-└── temp/                             # Auto-created temp directory
 ```
 
 ---
