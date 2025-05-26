@@ -1,3 +1,13 @@
+"""
+Pico W Prometheus DHT22 Sensor Server
+
+A MicroPython-based HTTP server for the Raspberry Pi Pico W that exposes
+DHT22 sensor readings (temperature and humidity) as Prometheus-compatible metrics.
+
+This module connects to WiFi, reads from a DHT22 sensor, and serves metrics
+via an HTTP endpoint for Prometheus scraping.
+"""
+
 import socket
 import time
 from secrets import secrets
@@ -7,7 +17,13 @@ import network
 import rp2
 from machine import Pin
 
-from config import METRICS_ENDPOINT, SENSOR_CONFIG, SERVER_CONFIG, WIFI_CONFIG
+from config import (
+    METRIC_NAMES,
+    METRICS_ENDPOINT,
+    SENSOR_CONFIG,
+    SERVER_CONFIG,
+    WIFI_CONFIG,
+)
 
 # Wi-Fi Setup
 ssid = secrets["ssid"]
@@ -40,6 +56,13 @@ sensor = dht.DHT22(Pin(SENSOR_CONFIG["pin"]))
 
 
 def read_dht22():
+    """
+    Read temperature and humidity from the DHT22 sensor.
+
+    Returns:
+        tuple: A tuple containing (temperature, humidity) as floats rounded to 2 decimal places,
+               or (None, None) if the sensor reading fails.
+    """
     try:
         sensor.measure()
         t = sensor.temperature()
@@ -52,8 +75,16 @@ def read_dht22():
 
 # HTTP Server (Prometheus-style)
 def format_metrics(temperature, humidity):
-    from config import METRIC_NAMES
+    """
+    Format temperature and humidity readings as Prometheus metrics.
 
+    Args:
+        temperature (float): Temperature reading in Celsius.
+        humidity (float): Humidity reading as a percentage.
+
+    Returns:
+        str: Formatted Prometheus metrics string with HELP and TYPE comments.
+    """
     return (
         f"# HELP {METRIC_NAMES['temperature']} Temperature in Celsius\n"
         f"# TYPE {METRIC_NAMES['temperature']} gauge\n"
