@@ -173,9 +173,76 @@ def format_metrics(temperature, humidity):
     return "\n".join(metrics) + "\n"
 
 
+def handle_update_request_streaming(cl):
+    """
+    Handle OTA update request with streaming response for better user feedback.
+
+    Args:
+        cl: Client socket connection
+    """
+    if not ota_updater:
+        cl.send("HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\n")
+        cl.send("OTA not enabled")
+        cl.close()
+        return
+
+    try:
+        # Send headers immediately
+        cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n")
+
+        print("Manual update requested")
+        cl.send("OTA Update Process Started\n")
+        cl.send("=" * 30 + "\n")
+
+        cl.send("Step 1: Checking for updates...\n")
+        has_update, new_version, _ = ota_updater.check_for_updates()
+
+        if not has_update:
+            cl.send("Result: No updates available\n")
+            cl.send("Current version is up to date.\n")
+            cl.close()
+            return
+
+        cl.send(f"Result: Update available to version {new_version}\n")
+        cl.send(f"Step 2: Starting update process...\n")
+
+        print(f"Starting update to version {new_version}")
+
+        # Perform the update with progress feedback
+        cl.send("Step 3: Downloading update files...\n")
+        cl.send("Step 4: Backing up current files...\n")
+        cl.send("Step 5: Applying update...\n")
+        cl.send("Step 6: Finalizing update...\n")
+
+        # Note: This will restart the device if successful
+        success = ota_updater.perform_update()
+
+        if success:
+            cl.send("SUCCESS: Update completed successfully!\n")
+            cl.send("Device will restart in 3 seconds...\n")
+            cl.send("After restart, device will be running version " + new_version + "\n")
+        else:
+            cl.send("ERROR: Update failed\n")
+            cl.send("Device will continue running current version\n")
+
+    except Exception as e:
+        print(f"Update request failed: {e}")
+        try:
+            cl.send(f"ERROR: Update process failed - {e}\n")
+            cl.send("Device will continue running current version\n")
+        except:
+            pass  # Connection might be closed
+
+    finally:
+        try:
+            cl.close()
+        except:
+            pass
+
+
 def handle_update_request():
     """
-    Handle OTA update request.
+    Handle OTA update request (legacy function kept for compatibility).
 
     Returns:
         str: HTTP response for update request.
@@ -301,9 +368,10 @@ while True:
             cl.send(response)
 
         elif method == "GET" and path == "/update":
-            # OTA update endpoint - exact match only
-            response = handle_update_request()
-            cl.send(response)
+            # OTA update endpoint with streaming response
+            handle_update_request_streaming(cl)
+            # Connection already closed in streaming handler
+            continue
 
         elif method == "GET" and path == "/health":
             # Health check endpoint
