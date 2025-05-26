@@ -235,6 +235,9 @@ up{job="pico_sensors"} == 0
 
 Import the provided dashboard from `configs/grafana-dashboard.json` or create panels with these queries:
 
+![image](https://github.com/user-attachments/assets/94b9de46-e617-4d34-aa95-315b0f37536a)
+
+
 ### Temperature Panel
 
 - **Query**: `pico_temperature_celsius`
