@@ -10,6 +10,9 @@ A lightweight MicroPython-based HTTP server for the Raspberry Pi Pico W that exp
 - 🌡️ Reads from a DHT22 sensor (temperature + humidity)
 - 📊 Exposes `/metrics` HTTP endpoint in Prometheus exposition format
 - 📈 Compatible with Prometheus + Grafana dashboards
+- 🔄 **Over-The-Air (OTA) updates** via GitHub releases
+- 🏥 Health check and status endpoints
+- ⚙️ Configurable settings via `config.py`
 - 🏠 Ideal for home room monitoring setups
 
 ---
@@ -117,6 +120,67 @@ Restart Prometheus after editing.
 ## 📝 License
 
 MIT — free for personal or commercial use.
+
+---
+
+## 🔄 Over-The-Air (OTA) Updates
+
+This project supports automatic updates directly from GitHub releases, allowing you to update your Pico W remotely without physical access.
+
+### 🚀 How OTA Works
+
+1. **Version Tracking**: Current version stored in `version.txt`
+2. **GitHub Integration**: Checks GitHub releases for newer versions
+3. **Automatic Download**: Downloads updated files from GitHub
+4. **Safe Updates**: Backs up current files before updating
+5. **Rollback**: Automatically restores backup if update fails
+
+### 📋 Available Endpoints
+
+- `http://<pico-ip>/metrics` - Prometheus metrics
+- `http://<pico-ip>/health` - Health check and version info
+- `http://<pico-ip>/update/status` - Current update status
+- `http://<pico-ip>/update` - Trigger manual update
+- `http://<pico-ip>/` - List all available endpoints
+
+### ⚙️ OTA Configuration
+
+Edit `config.py` to configure OTA settings:
+
+```python
+OTA_CONFIG = {
+    "enabled": True,
+    "auto_check": True,
+    "github_repo": {
+        "owner": "yourusername",  # Your GitHub username
+        "name": "pico-w-prometheus-dht22",
+        "branch": "main",
+    },
+    "update_files": ["main.py", "config.py", "ota_updater.py"],
+}
+```
+
+### 🏷️ Creating Releases
+
+1. **Make your changes** and commit to GitHub
+2. **Create a tag**: `git tag v1.0.1`
+3. **Push the tag**: `git push origin v1.0.1`
+4. **GitHub Actions** will automatically create a release
+5. **Pico W devices** will detect and can update to the new version
+
+### 🔧 Manual Update Process
+
+1. Visit `http://<pico-ip>/update/status` to check current version
+2. Visit `http://<pico-ip>/update` to trigger update
+3. Device will download, apply update, and restart automatically
+4. Check `http://<pico-ip>/health` to verify new version
+
+### 🛡️ Safety Features
+
+- **Backup System**: Current files backed up before update
+- **Atomic Updates**: All files downloaded before any are replaced
+- **Rollback**: Automatic restore if update fails
+- **Health Checks**: Verify system status after updates
 
 ---
 

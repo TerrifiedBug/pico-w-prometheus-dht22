@@ -42,3 +42,26 @@ METRIC_NAMES = {
 WIFI_CONFIG = {
     "country_code": "GB",  # 2-letter country code
 }
+
+# =============================================================================
+# OTA UPDATE CONFIGURATION
+# =============================================================================
+
+# Over-The-Air Update Settings
+OTA_CONFIG = {
+    "enabled": True,
+    "auto_check": True,  # Automatically check for updates
+    "check_interval": 3600,  # Seconds between update checks (1 hour)
+    "github_repo": {
+        "owner": "yourusername",  # Replace with your GitHub username
+        "name": "pico-w-prometheus-dht22",
+        "branch": "main",
+    },
+    "backup_enabled": True,  # Backup files before update
+    "max_backup_versions": 3,  # Keep N backup versions
+    "update_files": [  # Files to update via OTA
+        "main.py",
+        "config.py",
+        "ota_updater.py",
+    ],
+}

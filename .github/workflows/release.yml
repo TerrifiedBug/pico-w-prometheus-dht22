@@ -1,0 +1,52 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - "v*" # Trigger on version tags like v1.0.1, v2.0.0, etc.
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            ## Changes in this Release
+
+            ### 🚀 Features
+            - Updated sensor functionality
+            - Improved OTA update system
+
+            ### 🐛 Bug Fixes
+            - Fixed WiFi reconnection issues
+            - Improved error handling
+
+            ### 📝 Documentation
+            - Updated README with new features
+
+            ## 📦 Files for Pico W
+
+            The following files should be uploaded to your Pico W:
+            - `main.py` - Main application
+            - `config.py` - Configuration settings
+            - `ota_updater.py` - OTA update functionality
+            - `secrets.py` - WiFi credentials (create from secrets.py.example)
+            - `version.txt` - Version tracking
+
+            ## 🔄 OTA Update
+
+            If you have OTA enabled, you can update by visiting:
+            `http://your-pico-ip/update`
+
+          draft: false
+          prerelease: false

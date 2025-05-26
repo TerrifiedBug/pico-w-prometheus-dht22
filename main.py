@@ -20,6 +20,7 @@ from machine import Pin
 from config import (
     METRIC_NAMES,
     METRICS_ENDPOINT,
+    OTA_CONFIG,
     SENSOR_CONFIG,
     SERVER_CONFIG,
     WIFI_CONFIG,
@@ -53,6 +54,16 @@ else:
 
 # DHT22 Sensor Setup
 sensor = dht.DHT22(Pin(SENSOR_CONFIG["pin"]))
+
+# OTA Updater Setup
+ota_updater = None
+if OTA_CONFIG["enabled"]:
+    try:
+        from ota_updater import GitHubOTAUpdater
+        ota_updater = GitHubOTAUpdater()
+        print("OTA updater initialized")
+    except Exception as e:
+        print(f"Failed to initialize OTA updater: {e}")
 
 
 def read_dht22():
@@ -95,6 +106,88 @@ def format_metrics(temperature, humidity):
     )
 
 
+def handle_update_request():
+    """
+    Handle OTA update request.
+
+    Returns:
+        str: HTTP response for update request.
+    """
+    if not ota_updater:
+        return "HTTP/1.0 503 Service Unavailable\r\n\r\nOTA not enabled"
+
+    try:
+        print("Manual update requested")
+        has_update, new_version, _ = ota_updater.check_for_updates()
+
+        if not has_update:
+            return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nNo updates available"
+
+        print(f"Starting update to version {new_version}")
+        # Note: This will restart the device if successful
+        success = ota_updater.perform_update()
+
+        if success:
+            return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nUpdate completed, restarting..."
+        else:
+            return "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate failed"
+
+    except Exception as e:
+        print(f"Update request failed: {e}")
+        return "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate error"
+
+
+def handle_update_status():
+    """
+    Handle update status request.
+
+    Returns:
+        str: HTTP response with update status information.
+    """
+    if not ota_updater:
+        status = "OTA disabled"
+    else:
+        try:
+            status_info = ota_updater.get_update_status()
+            status = f"Current version: {status_info['current_version']}\n"
+            status += f"OTA enabled: {status_info['ota_enabled']}\n"
+            status += f"Auto check: {status_info['auto_check']}\n"
+            status += f"Repository: {status_info['repo']}\n"
+            status += f"Branch: {status_info['branch']}\n"
+            status += f"Update files: {', '.join(status_info['update_files'])}"
+        except Exception as e:
+            status = f"Status error: {e}"
+
+    return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{status}"
+
+
+def handle_health_check():
+    """
+    Handle health check request.
+
+    Returns:
+        str: HTTP response for health check.
+    """
+    try:
+        # Test sensor reading
+        temp, hum = read_dht22()
+        sensor_status = "OK" if temp is not None else "FAIL"
+
+        # Check OTA status
+        ota_status = "OK" if ota_updater else "DISABLED"
+
+        health_info = f"Sensor: {sensor_status}\nOTA: {ota_status}\nVersion: "
+        if ota_updater:
+            health_info += ota_updater.get_current_version()
+        else:
+            health_info += "unknown"
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{health_info}"
+
+    except Exception as e:
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nHealth check failed: {e}"
+
+
 addr = socket.getaddrinfo(SERVER_CONFIG["host"], SERVER_CONFIG["port"])[0][-1]
 s = socket.socket()
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -110,7 +203,9 @@ while True:
         request = cl.recv(1024)
         request_line = request.decode().split("\r\n")[0]
 
+        # Route requests to appropriate handlers
         if f"GET {METRICS_ENDPOINT}" in request_line:
+            # Prometheus metrics endpoint
             temp, hum = read_dht22()
             if temp is not None:
                 response = format_metrics(temp, hum)
@@ -119,8 +214,37 @@ while True:
             else:
                 cl.send("HTTP/1.0 500 Internal Server Error\r\n\r\n")
                 cl.send("Sensor error")
+
+        elif "GET /update" in request_line:
+            # OTA update endpoint
+            response = handle_update_request()
+            cl.send(response)
+
+        elif "GET /update/status" in request_line:
+            # Update status endpoint
+            response = handle_update_status()
+            cl.send(response)
+
+        elif "GET /health" in request_line:
+            # Health check endpoint
+            response = handle_health_check()
+            cl.send(response)
+
+        elif "GET /" in request_line and request_line.strip() == "GET / HTTP/1.1":
+            # Root endpoint - show available endpoints
+            endpoints_info = f"""Available endpoints:
+{METRICS_ENDPOINT} - Prometheus metrics
+/health - Health check
+/update/status - Update status
+/update - Trigger OTA update
+"""
+            cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n")
+            cl.send(endpoints_info)
+
         else:
-            cl.send("HTTP/1.0 404 Not Found\r\n\r\n")
+            # 404 for unknown endpoints
+            cl.send("HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\n")
+            cl.send("Endpoint not found")
 
         cl.close()
 
