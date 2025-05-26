@@ -1,75 +1,101 @@
 """
-Configuration file for Pico W Prometheus DHT22 sensor project
+Smart configuration loader for Pico W Prometheus DHT22 sensor project
+Automatically detects environment and loads appropriate configuration
 """
 
-# =============================================================================
-# SENSOR CONFIGURATION
-# =============================================================================
+import os
 
-SENSOR_CONFIG = {
-    "pin": 2,  # GPIO pin for DHT22 sensor
-    "read_interval": 30,  # Seconds between sensor readings
-}
+def detect_environment():
+    """
+    Detect the current environment based on version.txt format.
 
-# =============================================================================
-# SERVER CONFIGURATION
-# =============================================================================
+    Returns:
+        str: Environment name ('development', 'production')
+    """
+    # Check version.txt format to determine environment
+    try:
+        with open('version.txt', 'r') as f:
+            version = f.read().strip()
+            if version.startswith('dev-'):
+                return 'development'
+            elif version.startswith('v'):
+                return 'production'
+    except:
+        pass
 
-SERVER_CONFIG = {
-    "host": "0.0.0.0",  # Listen on all interfaces
-    "port": 80,  # HTTP port
-}
+    # Default to production for safety
+    return 'production'
 
-# =============================================================================
-# ENDPOINT CONFIGURATION
-# =============================================================================
+def load_config():
+    """
+    Load base configuration and apply environment-specific overrides.
 
-METRICS_ENDPOINT = "/metrics"  # Prometheus metrics endpoint path
+    Returns:
+        str: The loaded environment name
+    """
+    environment = detect_environment()
 
-# =============================================================================
-# METRIC NAMES
-# =============================================================================
+    try:
+        # Always start with base configuration
+        print(f"Loading base configuration...")
+        from config.base import *
 
-METRIC_NAMES = {
-    "temperature": "pico_temperature_celsius",
-    "humidity": "pico_humidity_percent",
-}
+        # Apply environment-specific overrides
+        if environment == 'development':
+            print(f"Applying development overrides...")
+            # Override for development environment
+            OTA_CONFIG["github_repo"]["branch"] = "dev"
+            OTA_CONFIG["check_interval"] = 1800  # 30 minutes
+            SENSOR_CONFIG["read_interval"] = 10  # Faster for testing
 
-# Additional system metrics (automatically added to /metrics endpoint)
-SYSTEM_METRIC_NAMES = {
-    "sensor_status": "pico_sensor_status",
-    "ota_status": "pico_ota_status",
-    "version_info": "pico_version_info",
-    "uptime": "pico_uptime_seconds",
-}
+            # Development environment variables
+            ENVIRONMENT = "development"
+            DEPLOYMENT_TYPE = "testing"
 
-# =============================================================================
-# WIFI CONFIGURATION
-# =============================================================================
+        elif environment == 'production':
+            print(f"Applying production overrides...")
+            # Override for production environment
+            OTA_CONFIG["github_repo"]["branch"] = "main"
+            OTA_CONFIG["check_interval"] = 3600  # 1 hour
+            SENSOR_CONFIG["read_interval"] = 30  # Standard interval
 
-WIFI_CONFIG = {
-    "country_code": "GB",  # 2-letter country code
-}
+            # Production environment variables
+            ENVIRONMENT = "production"
+            DEPLOYMENT_TYPE = "stable"
 
-# =============================================================================
-# OTA UPDATE CONFIGURATION
-# =============================================================================
+        # Update globals with all variables
+        globals().update({k: v for k, v in locals().items() if not k.startswith('_')})
+        return environment
 
-# Over-The-Air Update Settings
-OTA_CONFIG = {
-    "enabled": True,
-    "auto_check": True,  # Automatically check for updates
-    "check_interval": 3600,  # Seconds between update checks (1 hour)
-    "github_repo": {
-        "owner": "TerrifiedBug",  # Replace with your GitHub username
-        "name": "pico-w-prometheus-dht22",
-        "branch": "dev",
-    },
-    "backup_enabled": True,  # Backup files before update
-    "max_backup_versions": 3,  # Keep N backup versions
-    "update_files": [  # Files to update via OTA
-        "main.py",
-        "config.py",
-        "ota_updater.py",
-    ],
-}
+    except Exception as e:
+        print(f"Failed to load configuration: {e}")
+        print("Using base configuration only...")
+        from config.base import *
+        globals().update({k: v for k, v in locals().items() if not k.startswith('_')})
+        return 'base'
+
+# Auto-load configuration on import
+LOADED_ENVIRONMENT = load_config()
+
+# Re-export all configuration variables for backward compatibility
+try:
+    # These will be available after load_config() runs
+    __all__ = [
+        'SENSOR_CONFIG',
+        'SERVER_CONFIG',
+        'METRICS_ENDPOINT',
+        'METRIC_NAMES',
+        'SYSTEM_METRIC_NAMES',
+        'WIFI_CONFIG',
+        'OTA_CONFIG',
+        'ENVIRONMENT',
+        'DEPLOYMENT_TYPE',
+        'MONITORING_CONFIG',
+        'LOADED_ENVIRONMENT'
+    ]
+except:
+    pass
+
+print(f"Configuration loaded: {LOADED_ENVIRONMENT} environment")
+if 'OTA_CONFIG' in globals():
+    print(f"OTA branch: {OTA_CONFIG['github_repo']['branch']}")

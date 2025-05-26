@@ -1,2 +1,8 @@
 secrets.py
 internal-docs/
+
+# Version file (branch-specific) - each branch maintains its own
+version.txt
+
+# Local configuration overrides (device-specific)
+config.local.py
