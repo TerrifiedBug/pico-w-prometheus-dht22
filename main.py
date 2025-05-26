@@ -87,7 +87,7 @@ def read_dht22():
 # HTTP Server (Prometheus-style)
 def format_metrics(temperature, humidity):
     """
-    Format temperature and humidity readings as Prometheus metrics.
+    Format temperature, humidity, and system health as Prometheus metrics.
 
     Args:
         temperature (float): Temperature reading in Celsius.
@@ -96,14 +96,52 @@ def format_metrics(temperature, humidity):
     Returns:
         str: Formatted Prometheus metrics string with HELP and TYPE comments.
     """
-    return (
-        f"# HELP {METRIC_NAMES['temperature']} Temperature in Celsius\n"
-        f"# TYPE {METRIC_NAMES['temperature']} gauge\n"
-        f"{METRIC_NAMES['temperature']} {temperature}\n"
-        f"# HELP {METRIC_NAMES['humidity']} Humidity in Percent\n"
-        f"# TYPE {METRIC_NAMES['humidity']} gauge\n"
-        f"{METRIC_NAMES['humidity']} {humidity}\n"
-    )
+    # Basic sensor metrics
+    metrics = []
+
+    # Temperature and humidity
+    metrics.extend([
+        f"# HELP {METRIC_NAMES['temperature']} Temperature in Celsius",
+        f"# TYPE {METRIC_NAMES['temperature']} gauge",
+        f"{METRIC_NAMES['temperature']} {temperature}",
+        f"# HELP {METRIC_NAMES['humidity']} Humidity in Percent",
+        f"# TYPE {METRIC_NAMES['humidity']} gauge",
+        f"{METRIC_NAMES['humidity']} {humidity}",
+    ])
+
+    # System health metrics
+    sensor_status = 1 if temperature is not None else 0
+    ota_status = 1 if ota_updater else 0
+
+    metrics.extend([
+        "# HELP pico_sensor_status Sensor health status (1=OK, 0=FAIL)",
+        "# TYPE pico_sensor_status gauge",
+        f"pico_sensor_status {sensor_status}",
+        "# HELP pico_ota_status OTA system status (1=enabled, 0=disabled)",
+        "# TYPE pico_ota_status gauge",
+        f"pico_ota_status {ota_status}",
+    ])
+
+    # Version information
+    if ota_updater:
+        current_version = ota_updater.get_current_version()
+        metrics.extend([
+            "# HELP pico_version_info Current firmware version",
+            "# TYPE pico_version_info gauge",
+            f'pico_version_info{{version="{current_version}"}} 1',
+        ])
+
+    # System uptime (approximate - time since metrics started)
+    import time
+    uptime_seconds = time.time() % 86400  # Reset daily to avoid overflow
+    metrics.extend([
+        "# HELP pico_uptime_seconds Approximate uptime in seconds",
+        "# TYPE pico_uptime_seconds counter",
+        f"pico_uptime_seconds {uptime_seconds:.0f}",
+    ])
+
+
+    return "\n".join(metrics) + "\n"
 
 
 def handle_update_request():

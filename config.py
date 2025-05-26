@@ -35,6 +35,14 @@ METRIC_NAMES = {
     "humidity": "pico_humidity_percent",
 }
 
+# Additional system metrics (automatically added to /metrics endpoint)
+SYSTEM_METRIC_NAMES = {
+    "sensor_status": "pico_sensor_status",
+    "ota_status": "pico_ota_status",
+    "version_info": "pico_version_info",
+    "uptime": "pico_uptime_seconds",
+}
+
 # =============================================================================
 # WIFI CONFIGURATION
 # =============================================================================
