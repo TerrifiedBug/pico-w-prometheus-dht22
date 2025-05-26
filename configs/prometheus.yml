@@ -8,3 +8,6 @@ scrape_configs:
       - targets: ["ip:80"]
         labels:
           location: office
+      - targets: ["ip:80"]
+        labels:
+          location: bedroom

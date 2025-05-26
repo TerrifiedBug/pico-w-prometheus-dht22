@@ -22,69 +22,6 @@ jobs:
           body: |
             ## 🚀 New Release ${{ github.ref_name }}
 
-            ### 🐛 Critical Bug Fixes
-            - **Fixed dangerous HTTP routing bug** - Endpoints now work correctly and securely
-            - **Proper endpoint separation** - `/update/status` and `/update` now behave as intended
-            - **Security improvement** - Only exact `/update` path triggers updates (no more accidental updates from typos)
-            - **Better error handling** - Proper 404 responses for invalid URLs
-            - **Fixed HTTP 403 errors** - Added proper headers and fallback mechanisms for GitHub API access
-
-            ### 🔄 OTA System Improvements
-            - **Enhanced GitHub API access** - Added User-Agent and proper headers to prevent 403 errors
-            - **Fallback mechanism** - Automatic retry using raw GitHub files if API fails
-            - **Better error logging** - Detailed debugging information for troubleshooting
-            - **Improved request handling** - Centralized HTTP handling with proper error recovery
-
-            ### 📦 Files for Pico W
-
-            The following files should be uploaded to your Pico W:
-            - `main.py` - Main application (⚠️ **UPDATED** - contains critical routing fixes)
-            - `ota_updater.py` - OTA update functionality (⚠️ **UPDATED** - fixes HTTP 403 issues)
-            - `config.py` - Configuration settings
-            - `secrets.py` - WiFi credentials (create from secrets.py.example)
-            - `version.txt` - Version tracking (updated to 1.0.1)
-
-            ### 🔄 OTA Update
-
-            If you have OTA enabled, you can update by visiting:
-            `http://your-pico-ip/update`
-
-            **Note**: This release fixes critical routing and API access issues. Update strongly recommended for all users.
-
-            ### 🛠️ Manual Installation
-
-            1. Copy the files above to your Pico W
-            2. Update `config.py` with your GitHub username (`TerrifiedBug`)
-            3. Create `secrets.py` from the example file
-            4. Restart your Pico W
-
-            ### ✅ Endpoint Behavior (Fixed)
-
-            - `GET /metrics` - Prometheus metrics
-            - `GET /health` - Health check and version info
-            - `GET /update/status` - Update status (now works correctly)
-            - `GET /update` - Trigger OTA update (exact match only)
-            - `GET /` - List available endpoints
-            - Invalid URLs now return proper 404 errors
-
-            ### 🔧 Technical Changes
-
-            #### HTTP Routing Fixes:
-            - Implemented exact HTTP path matching instead of substring matching
-            - Fixed routing order to prevent `/update/status` conflicts
-            - Added proper request parsing with error handling
-            - Enhanced security to prevent accidental update triggers
-
-            #### OTA System Fixes:
-            - Added proper User-Agent headers for GitHub API requests
-            - Implemented fallback mechanism using raw GitHub file access
-            - Enhanced error logging with detailed request/response information
-            - Improved download reliability with better error handling
-            - Added version comparison logic for both `v1.0.1` and `1.0.1` formats
-
-            ### 🚨 Breaking Changes
-            None - this is a bug fix release that maintains full backward compatibility.
-
           draft: false
           prerelease: false
         env:
