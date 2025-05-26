@@ -123,4 +123,5 @@ MIT — free for personal or commercial use.
 ## 🙋‍♂️ Credits
 
 Created by TerrifiedBug
+
 Inspired by [Prometheus-style embedded metrics exporters](http://www.d3noob.org/2022/10/using-raspberry-pi-pico-with-prometheus.html)
