@@ -1,39 +1,60 @@
-# pico-w-prometheus-dht22
+# Pico W Prometheus DHT22 Sensor
 
-A lightweight MicroPython-based HTTP server for the Raspberry Pi Pico W that exposes DHT22 sensor readings (temperature and humidity) as Prometheus-compatible metrics.
+A lightweight MicroPython-based HTTP server for the Raspberry Pi Pico W that exposes DHT22 sensor readings (temperature and humidity) as Prometheus-compatible metrics with Over-The-Air (OTA) update capabilities.
 
 ---
 
 ## 📦 Features
 
-- 📡 Connects to Wi-Fi on boot
-- 🌡️ Reads from a DHT22 sensor (temperature + humidity)
-- 📊 Exposes `/metrics` HTTP endpoint in Prometheus exposition format
-- 📈 Compatible with Prometheus + Grafana dashboards
-- 🔄 **Over-The-Air (OTA) updates** via GitHub releases
-- 🏥 Health check and status endpoints
-- ⚙️ Configurable settings via `config.py`
-- 🏠 Ideal for home room monitoring setups
+- 📡 **Wi-Fi Connectivity**: Automatic connection on boot with configurable settings
+- 🌡️ **DHT22 Sensor**: Reads temperature and humidity with error handling
+- 📊 **Prometheus Metrics**: Standard exposition format at `/metrics` endpoint
+- 📈 **Monitoring Ready**: Compatible with Prometheus + Grafana dashboards
+- 🔄 **OTA Updates**: Remote updates via GitHub releases with safety features
+- 🏥 **Health Monitoring**: Multiple endpoints for system status and diagnostics
+- ⚙️ **Configurable**: Centralized configuration via `config.py`
+- 🛡️ **Robust**: Backup/restore system and automatic rollback on failures
+- 🏠 **IoT Ready**: Perfect for distributed sensor deployments
 
 ---
 
 ## 🧰 Requirements
 
+### Hardware
+
 - Raspberry Pi Pico W
-- DHT22 sensor
+- DHT22 temperature/humidity sensor
+- Breadboard and jumper wires (or custom PCB)
+
+### Software
+
 - MicroPython firmware (v1.20+)
-- Optional: Prometheus + Grafana instance
+- Optional: Prometheus + Grafana for monitoring
+- Git for version control and releases
 
 ---
 
-## 📁 File Structure
+## 📁 Project Structure
 
 ```
-.
-├── main.py          # Wi-Fi + HTTP server + sensor reading
-├── config.py        # Config file
-├── secrets.py       # Wi-Fi credentials
-├── README.md        # This file
+pico-w-prometheus-dht22/
+├── main.py                           # Main application entry point
+├── ota_updater.py                    # OTA update functionality
+├── config.py                         # Configuration settings
+├── secrets.py.example                # WiFi credentials template
+├── version.txt                       # Current firmware version
+├── .gitignore                        # Git ignore rules
+├── README.md                         # This documentation
+├── configs/                          # External configuration files
+│   ├── prometheus.yml                # Prometheus scrape config
+│   └── grafana-dashboard.json        # Grafana dashboard template
+├── internal-docs/                    # Technical documentation
+│   └── OTA_IMPLEMENTATION_GUIDE.md   # Detailed OTA system docs
+├── .github/                          # GitHub Actions workflows
+│   └── workflows/
+│       └── release.yml               # Automated release creation
+├── backup/                           # Auto-created backup directory
+└── temp/                             # Auto-created temp directory
 ```
 
 ---
@@ -42,13 +63,27 @@ A lightweight MicroPython-based HTTP server for the Raspberry Pi Pico W that exp
 
 ### 1. Flash MicroPython to Pico W
 
-Download the `.uf2` firmware from the [official site](https://micropython.org/download/rp2-pico-w/) and drag it onto the `RPI-RP2` volume in bootloader mode.
+1. Download the latest `.uf2` firmware from [micropython.org](https://micropython.org/download/rp2-pico-w/)
+2. Hold the BOOTSEL button while connecting USB to enter bootloader mode
+3. Drag the `.uf2` file to the `RPI-RP2` volume
+4. The Pico will reboot automatically
 
-### 2. Upload Project Files
+### 2. Prepare Project Files
 
-Use **Thonny** or `mpremote` to copy these files to the Pico:
+Clone this repository:
 
-#### `secrets.py`
+```bash
+git clone https://github.com/TerrifiedBug/pico-w-prometheus-dht22.git
+cd pico-w-prometheus-dht22
+```
+
+Create your WiFi credentials file:
+
+```bash
+cp secrets.py.example secrets.py
+```
+
+Edit `secrets.py` with your WiFi details:
 
 ```python
 secrets = {
@@ -57,135 +92,341 @@ secrets = {
 }
 ```
 
-#### `main.py`
+### 3. Configure the Project
 
-> Contains full server logic. On boot, it connects to Wi-Fi and starts listening on port `80`.
+Edit `config.py` to customize settings:
 
-### 3. Reboot the Pico
+```python
+# Sensor configuration
+SENSOR_CONFIG = {
+    "pin": 2,  # GPIO pin for DHT22 sensor
+    "read_interval": 30,
+}
 
-Once connected, it will print its IP address via REPL.
+# OTA configuration
+OTA_CONFIG = {
+    "enabled": True,
+    "github_repo": {
+        "owner": "yourusername",  # Replace with your GitHub username
+        "name": "pico-w-prometheus-dht22",
+        "branch": "main",
+    },
+}
+```
+
+### 4. Upload Files to Pico W
+
+Using **Thonny IDE** (recommended for beginners):
+
+1. Open Thonny and connect to your Pico W
+2. Upload these files to the Pico's root directory:
+   - `main.py`
+   - `ota_updater.py`
+   - `config.py`
+   - `secrets.py`
+   - `version.txt`
+
+Using **mpremote** (command line):
+
+```bash
+mpremote cp main.py ota_updater.py config.py secrets.py version.txt :
+```
+
+### 5. Hardware Connections
+
+Connect the DHT22 sensor:
+
+- **VCC** → 3.3V (Pin 36)
+- **GND** → Ground (Pin 38)
+- **DATA** → GPIO 2 (Pin 4) - or change in `config.py`
+
+### 6. Start the System
+
+1. Reset the Pico W or run `main.py` in Thonny
+2. Monitor the REPL output for the assigned IP address
+3. Test the connection: `http://<pico-ip>/health`
 
 ---
 
-## 📡 Metrics Output
+## 📡 Available Endpoints
 
-Visit `http://<pico-ip>/metrics` to see:
+| Endpoint         | Method | Description                          |
+| ---------------- | ------ | ------------------------------------ |
+| `/`              | GET    | List all available endpoints         |
+| `/metrics`       | GET    | Prometheus-formatted sensor metrics  |
+| `/health`        | GET    | System health check and version info |
+| `/update/status` | GET    | Current OTA update status            |
+| `/update`        | GET    | Trigger manual OTA update            |
 
-```
+### Example Metrics Output
+
+Visit `http://<pico-ip>/metrics`:
+
+```prometheus
 # HELP pico_temperature_celsius Temperature in Celsius
 # TYPE pico_temperature_celsius gauge
 pico_temperature_celsius 21.8
+
 # HELP pico_humidity_percent Humidity in Percent
 # TYPE pico_humidity_percent gauge
 pico_humidity_percent 55.4
+
+# HELP pico_sensor_status Sensor health status (1=OK, 0=FAIL)
+# TYPE pico_sensor_status gauge
+pico_sensor_status 1
+
+# HELP pico_ota_status OTA system status (1=enabled, 0=disabled)
+# TYPE pico_ota_status gauge
+pico_ota_status 1
+
+# HELP pico_version_info Current firmware version
+# TYPE pico_version_info gauge
+pico_version_info{version="v1.0.0"} 1
+
+# HELP pico_uptime_seconds Approximate uptime in seconds
+# TYPE pico_uptime_seconds counter
+pico_uptime_seconds 3600
 ```
 
 ---
 
-## 📈 Prometheus Configuration
+## 📈 Prometheus Integration
 
-Update your `prometheus.yml`:
+### Configuration
+
+Add to your `prometheus.yml`:
 
 ```yaml
+global:
+  scrape_interval: 30s
+
 scrape_configs:
   - job_name: "pico_sensors"
     metrics_path: /metrics
+    scrape_interval: 30s
     static_configs:
       - targets:
-          - "10.1.1.161:80"
+          - "192.168.1.100:80" # Replace with your Pico's IP
         labels:
-          location: kitchen
+          location: "kitchen"
+          device: "pico-w-001"
       - targets:
-          - "10.1.1.162:80"
+          - "192.168.1.101:80"
         labels:
-          location: bedroom
+          location: "bedroom"
+          device: "pico-w-002"
 ```
 
-Restart Prometheus after editing.
+### Useful Queries
+
+```promql
+# Current temperature by location
+pico_temperature_celsius
+
+# Humidity levels
+pico_humidity_percent
+
+# Device health status
+pico_sensor_status
+
+# Devices that are offline
+up{job="pico_sensors"} == 0
+```
 
 ---
 
-## 📊 Grafana Dashboard (Optional)
+## 📊 Grafana Dashboard
 
-- Add Prometheus as a data source
-- Create a new dashboard with a time-series panel
-- Use query:
-  ```promql
-  pico_temperature_celsius
-  ```
-- Use `{{location}}` as the legend for multi-room graphs
+Import the provided dashboard from `configs/grafana-dashboard.json` or create panels with these queries:
 
----
+### Temperature Panel
 
-## 📝 License
+- **Query**: `pico_temperature_celsius`
+- **Legend**: `{{location}} - {{device}}`
+- **Unit**: Celsius (°C)
 
-MIT — free for personal or commercial use.
+### Humidity Panel
+
+- **Query**: `pico_humidity_percent`
+- **Legend**: `{{location}} - {{device}}`
+- **Unit**: Percent (%)
+
+### Device Status Panel
+
+- **Query**: `pico_sensor_status`
+- **Type**: Stat panel
+- **Thresholds**: 0 = Red, 1 = Green
 
 ---
 
 ## 🔄 Over-The-Air (OTA) Updates
 
-This project supports automatic updates directly from GitHub releases, allowing you to update your Pico W remotely without physical access.
-
-### 🚀 How OTA Works
+### How It Works
 
 1. **Version Tracking**: Current version stored in `version.txt`
-2. **GitHub Integration**: Checks GitHub releases for newer versions
-3. **Automatic Download**: Downloads updated files from GitHub
-4. **Safe Updates**: Backs up current files before updating
-5. **Rollback**: Automatically restores backup if update fails
+2. **GitHub Integration**: Automatically checks GitHub releases
+3. **Safe Downloads**: Files downloaded to temporary directory first
+4. **Atomic Updates**: All files replaced simultaneously
+5. **Backup System**: Current files backed up before update
+6. **Auto Rollback**: Restores backup if update fails
 
-### 📋 Available Endpoints
+### Creating Releases
 
-- `http://<pico-ip>/metrics` - Prometheus metrics
-- `http://<pico-ip>/health` - Health check and version info
-- `http://<pico-ip>/update/status` - Current update status
-- `http://<pico-ip>/update` - Trigger manual update
-- `http://<pico-ip>/` - List all available endpoints
+1. **Make Changes**: Edit your code and test locally
+2. **Commit Changes**:
+   ```bash
+   git add .
+   git commit -m "Add new feature"
+   git push origin main
+   ```
+3. **Create Release**:
+   ```bash
+   git tag v1.0.1
+   git push origin v1.0.1
+   ```
+4. **Automatic Release**: GitHub Actions creates the release
+5. **Device Updates**: Pico W devices can now update to v1.0.1
 
-### ⚙️ OTA Configuration
+### Manual Update Process
 
-Edit `config.py` to configure OTA settings:
+1. **Check Status**: Visit `http://<pico-ip>/update/status`
+2. **Trigger Update**: Visit `http://<pico-ip>/update`
+3. **Monitor Progress**: Device will restart automatically
+4. **Verify Update**: Check `http://<pico-ip>/health` for new version
+
+### Safety Features
+
+- ✅ **Backup System**: Files backed up before update
+- ✅ **Atomic Updates**: All-or-nothing file replacement
+- ✅ **Rollback**: Automatic restore on failure
+- ✅ **Health Checks**: System status verification
+- ✅ **Network Resilience**: Handles connection failures gracefully
+
+---
+
+## 🛠️ Troubleshooting
+
+### Common Issues
+
+**WiFi Connection Failed**
+
+- Check SSID and password in `secrets.py`
+- Verify 2.4GHz network (Pico W doesn't support 5GHz)
+- Check signal strength
+
+**Sensor Reading Errors**
+
+- Verify DHT22 wiring connections
+- Check GPIO pin configuration in `config.py`
+- Ensure adequate power supply (3.3V)
+
+**OTA Update Failures**
+
+- Check internet connectivity
+- Verify GitHub repository is public
+- Ensure sufficient storage space on Pico W
+
+**Prometheus Not Scraping**
+
+- Verify Pico W IP address in `prometheus.yml`
+- Check firewall settings
+- Confirm `/metrics` endpoint is accessible
+
+### Debug Information
+
+Enable debug output by monitoring the REPL console during operation. Key information includes:
+
+- WiFi connection status and IP address
+- Sensor reading success/failure
+- HTTP request handling
+- OTA update progress
+
+---
+
+## 🔧 Advanced Configuration
+
+### Custom Metric Names
+
+Edit `config.py` to customize metric names:
 
 ```python
-OTA_CONFIG = {
-    "enabled": True,
-    "auto_check": True,
-    "github_repo": {
-        "owner": "yourusername",  # Your GitHub username
-        "name": "pico-w-prometheus-dht22",
-        "branch": "main",
-    },
-    "update_files": ["main.py", "config.py", "ota_updater.py"],
+METRIC_NAMES = {
+    "temperature": "room_temperature_celsius",
+    "humidity": "room_humidity_percent",
 }
 ```
 
-### 🏷️ Creating Releases
+### Network Settings
 
-1. **Make your changes** and commit to GitHub
-2. **Create a tag**: `git tag v1.0.1`
-3. **Push the tag**: `git push origin v1.0.1`
-4. **GitHub Actions** will automatically create a release
-5. **Pico W devices** will detect and can update to the new version
+Configure static IP (optional):
 
-### 🔧 Manual Update Process
+```python
+# In main.py, uncomment and modify:
+wlan.ifconfig(('192.168.1.100','255.255.255.0','192.168.1.1','8.8.8.8'))
+```
 
-1. Visit `http://<pico-ip>/update/status` to check current version
-2. Visit `http://<pico-ip>/update` to trigger update
-3. Device will download, apply update, and restart automatically
-4. Check `http://<pico-ip>/health` to verify new version
+### Update File Selection
 
-### 🛡️ Safety Features
+Choose which files to update via OTA:
 
-- **Backup System**: Current files backed up before update
-- **Atomic Updates**: All files downloaded before any are replaced
-- **Rollback**: Automatic restore if update fails
-- **Health Checks**: Verify system status after updates
+```python
+OTA_CONFIG = {
+    "update_files": [
+        "main.py",
+        "config.py",
+        "ota_updater.py",
+        # Add other files as needed
+    ],
+}
+```
+
+---
+
+## 📚 Documentation
+
+- **[OTA Implementation Guide](internal-docs/OTA_IMPLEMENTATION_GUIDE.md)**: Detailed technical documentation
+- **[Prometheus Configuration](configs/prometheus.yml)**: Example scrape configuration
+- **[Grafana Dashboard](configs/grafana-dashboard.json)**: Pre-built dashboard template
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make your changes and test thoroughly
+4. Commit with clear messages: `git commit -m "Add feature description"`
+5. Push to your fork: `git push origin feature-name`
+6. Create a Pull Request
+
+---
+
+## 📝 License
+
+MIT License - free for personal and commercial use.
 
 ---
 
 ## 🙋‍♂️ Credits
 
-Created by TerrifiedBug
+Created by **TerrifiedBug**
 
-Inspired by [Prometheus-style embedded metrics exporters](http://www.d3noob.org/2022/10/using-raspberry-pi-pico-with-prometheus.html)
+Inspired by Prometheus-style embedded metrics exporters and the need for reliable IoT sensor monitoring with remote update capabilities.
+
+---
+
+## ⭐ Support
+
+If this project helps you, please consider:
+
+- ⭐ Starring the repository
+- 🐛 Reporting issues
+- 💡 Suggesting improvements
+- 📖 Contributing to documentation
+
+For support, please open an issue on GitHub with:
+
+- Your hardware setup
+- MicroPython version
+- Error messages or logs
+- Steps to reproduce the problem
