@@ -29,6 +29,14 @@ from config import (
 # Record boot time using ticks for accurate uptime calculation
 boot_ticks = time.ticks_ms()
 
+# Global update queue for delayed updates
+pending_update = {
+    "scheduled": False,
+    "version": None,
+    "start_time": 0,
+    "current_version": None
+}
+
 # Wi-Fi Setup
 ssid = secrets["ssid"]
 password = secrets["pw"]
@@ -173,71 +181,83 @@ def format_metrics(temperature, humidity):
     return "\n".join(metrics) + "\n"
 
 
-def handle_update_request_streaming(cl):
+def handle_update_request_delayed():
     """
-    Handle OTA update request with streaming response for better user feedback.
+    Handle OTA update request with delayed execution for better user feedback.
 
-    Args:
-        cl: Client socket connection
+    Returns:
+        str: HTTP response for update request.
     """
     if not ota_updater:
-        cl.send("HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\n")
-        cl.send("OTA not enabled")
-        cl.close()
-        return
+        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nOTA not enabled"
 
     try:
-        # Send headers immediately
-        cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n")
-
         print("Manual update requested")
-        cl.send("OTA Update Process Started\n")
-        cl.send("=" * 30 + "\n")
 
-        cl.send("Step 1: Checking for updates...\n")
+        # Check if update is already scheduled
+        if pending_update["scheduled"]:
+            time_remaining = pending_update["start_time"] - time.time()
+            if time_remaining > 0:
+                return f"""HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nUPDATE ALREADY SCHEDULED
+
+Target version: {pending_update['version']}
+Time remaining: {int(time_remaining)} seconds
+Current time: {time.time():.0f}
+
+The update will start automatically.
+Monitor progress at: /update/status
+Check result after restart at: /health"""
+
+        # Check for available updates
         has_update, new_version, _ = ota_updater.check_for_updates()
 
         if not has_update:
-            cl.send("Result: No updates available\n")
-            cl.send("Current version is up to date.\n")
-            cl.close()
-            return
+            return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nNo updates available\n\nCurrent version is up to date."
 
-        cl.send(f"Result: Update available to version {new_version}\n")
-        cl.send(f"Step 2: Starting update process...\n")
+        # Get current version for display
+        current_version = ota_updater.get_current_version()
 
-        print(f"Starting update to version {new_version}")
+        # Schedule update for 10 seconds later
+        pending_update["scheduled"] = True
+        pending_update["version"] = new_version
+        pending_update["current_version"] = current_version
+        pending_update["start_time"] = time.time() + 10
 
-        # Perform the update with progress feedback
-        cl.send("Step 3: Downloading update files...\n")
-        cl.send("Step 4: Backing up current files...\n")
-        cl.send("Step 5: Applying update...\n")
-        cl.send("Step 6: Finalizing update...\n")
+        print(f"Update to {new_version} scheduled for {pending_update['start_time']}")
 
-        # Note: This will restart the device if successful
-        success = ota_updater.perform_update()
+        return f"""HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nUPDATE SCHEDULED SUCCESSFULLY!
 
-        if success:
-            cl.send("SUCCESS: Update completed successfully!\n")
-            cl.send("Device will restart in 3 seconds...\n")
-            cl.send("After restart, device will be running version " + new_version + "\n")
-        else:
-            cl.send("ERROR: Update failed\n")
-            cl.send("Device will continue running current version\n")
+Current version: {current_version}
+Target version: {new_version}
+Update will start in: 10 seconds
+"""
 
     except Exception as e:
         print(f"Update request failed: {e}")
-        try:
-            cl.send(f"ERROR: Update process failed - {e}\n")
-            cl.send("Device will continue running current version\n")
-        except:
-            pass  # Connection might be closed
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate scheduling failed: {e}"
 
-    finally:
-        try:
-            cl.close()
-        except:
-            pass
+
+def perform_scheduled_update():
+    """
+    Perform the scheduled OTA update.
+    """
+    try:
+        print(f"Starting scheduled update to version {pending_update['version']}")
+
+        # Perform the update
+        success = ota_updater.perform_update()
+
+        if success:
+            print("Update completed successfully, device will restart")
+        else:
+            print("Update failed")
+            # Reset pending update on failure
+            pending_update["scheduled"] = False
+
+    except Exception as e:
+        print(f"Scheduled update failed: {e}")
+        # Reset pending update on failure
+        pending_update["scheduled"] = False
 
 
 def handle_update_request():
@@ -273,7 +293,7 @@ def handle_update_request():
 
 def handle_update_status():
     """
-    Handle update status request.
+    Handle update status request with pending update information.
 
     Returns:
         str: HTTP response with update status information.
@@ -288,7 +308,25 @@ def handle_update_status():
             status += f"Auto check: {status_info['auto_check']}\n"
             status += f"Repository: {status_info['repo']}\n"
             status += f"Branch: {status_info['branch']}\n"
-            status += f"Update files: {', '.join(status_info['update_files'])}"
+            status += f"Update files: {', '.join(status_info['update_files'])}\n"
+
+            # Add pending update information
+            if pending_update["scheduled"]:
+                time_remaining = pending_update["start_time"] - time.time()
+                if time_remaining > 0:
+                    status += f"\nPENDING UPDATE:\n"
+                    status += f"Target version: {pending_update['version']}\n"
+                    status += f"Time remaining: {int(time_remaining)} seconds\n"
+                    status += f"Scheduled start: {pending_update['start_time']:.0f}\n"
+                    status += f"Current time: {time.time():.0f}\n"
+                    status += f"Status: WAITING FOR SCHEDULED TIME"
+                else:
+                    status += f"\nPENDING UPDATE:\n"
+                    status += f"Target version: {pending_update['version']}\n"
+                    status += f"Status: STARTING NOW"
+            else:
+                status += f"\nPENDING UPDATE: None"
+
         except Exception as e:
             status = f"Status error: {e}"
 
@@ -332,6 +370,11 @@ print("Listening on http://%s%s" % (wlan.ifconfig()[0], METRICS_ENDPOINT))
 
 while True:
     try:
+        # Check for pending scheduled updates
+        if pending_update["scheduled"] and time.time() >= pending_update["start_time"]:
+            perform_scheduled_update()
+            # Note: perform_scheduled_update() will restart the device if successful
+
         cl, addr = s.accept()
         print("Client connected from", addr)
         request = cl.recv(1024)
@@ -368,10 +411,9 @@ while True:
             cl.send(response)
 
         elif method == "GET" and path == "/update":
-            # OTA update endpoint with streaming response
-            handle_update_request_streaming(cl)
-            # Connection already closed in streaming handler
-            continue
+            # OTA update endpoint with delayed execution
+            response = handle_update_request_delayed()
+            cl.send(response)
 
         elif method == "GET" and path == "/health":
             # Health check endpoint
