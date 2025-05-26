@@ -26,76 +26,102 @@ def detect_environment():
     # Default to production for safety
     return 'production'
 
-def load_config():
-    """
-    Load base configuration and apply environment-specific overrides.
+# =============================================================================
+# BASE CONFIGURATION - SHARED ACROSS ALL ENVIRONMENTS
+# =============================================================================
 
-    Returns:
-        str: The loaded environment name
-    """
-    environment = detect_environment()
+# SENSOR CONFIGURATION
+SENSOR_CONFIG = {
+    "pin": 2,  # GPIO pin for DHT22 sensor
+    "read_interval": 30,  # Seconds between sensor readings
+}
 
-    try:
-        # Always start with base configuration
-        print(f"Loading base configuration...")
-        from config.base import *
+# SERVER CONFIGURATION
+SERVER_CONFIG = {
+    "host": "0.0.0.0",  # Listen on all interfaces
+    "port": 80,  # HTTP port
+}
 
-        # Apply environment-specific overrides
-        if environment == 'development':
-            print(f"Applying development overrides...")
-            # Override for development environment
-            OTA_CONFIG["github_repo"]["branch"] = "dev"
-            OTA_CONFIG["check_interval"] = 1800  # 30 minutes
-            SENSOR_CONFIG["read_interval"] = 10  # Faster for testing
+# ENDPOINT CONFIGURATION
+METRICS_ENDPOINT = "/metrics"  # Prometheus metrics endpoint path
 
-            # Development environment variables
-            ENVIRONMENT = "development"
-            DEPLOYMENT_TYPE = "testing"
+# METRIC NAMES
+METRIC_NAMES = {
+    "temperature": "pico_temperature_celsius",
+    "humidity": "pico_humidity_percent",
+}
 
-        elif environment == 'production':
-            print(f"Applying production overrides...")
-            # Override for production environment
-            OTA_CONFIG["github_repo"]["branch"] = "main"
-            OTA_CONFIG["check_interval"] = 3600  # 1 hour
-            SENSOR_CONFIG["read_interval"] = 30  # Standard interval
+# Additional system metrics (automatically added to /metrics endpoint)
+SYSTEM_METRIC_NAMES = {
+    "sensor_status": "pico_sensor_status",
+    "ota_status": "pico_ota_status",
+    "version_info": "pico_version_info",
+    "uptime": "pico_uptime_seconds",
+}
 
-            # Production environment variables
-            ENVIRONMENT = "production"
-            DEPLOYMENT_TYPE = "stable"
+# WIFI CONFIGURATION
+WIFI_CONFIG = {
+    "country_code": "GB",  # 2-letter country code
+}
 
-        # Update globals with all variables
-        globals().update({k: v for k, v in locals().items() if not k.startswith('_')})
-        return environment
+# BASE OTA UPDATE CONFIGURATION
+OTA_CONFIG = {
+    "enabled": True,
+    "auto_check": True,  # Automatically check for updates
+    "check_interval": 3600,  # Seconds between update checks (1 hour)
+    "github_repo": {
+        "owner": "TerrifiedBug",  # Replace with your GitHub username
+        "name": "pico-w-prometheus-dht22",
+        "branch": "main",  # Default to main branch (overridden by environment configs)
+    },
+    "backup_enabled": True,  # Backup files before update
+    "max_backup_versions": 3,  # Keep N backup versions
+    "update_files": [  # Files to update via OTA
+        "main.py",
+        "config.py",
+        "ota_updater.py",
+    ],
+}
 
-    except Exception as e:
-        print(f"Failed to load configuration: {e}")
-        print("Using base configuration only...")
-        from config.base import *
-        globals().update({k: v for k, v in locals().items() if not k.startswith('_')})
-        return 'base'
+# =============================================================================
+# ENVIRONMENT-SPECIFIC OVERRIDES
+# =============================================================================
 
-# Auto-load configuration on import
-LOADED_ENVIRONMENT = load_config()
+# Detect environment and apply overrides
+environment = detect_environment()
 
-# Re-export all configuration variables for backward compatibility
 try:
-    # These will be available after load_config() runs
-    __all__ = [
-        'SENSOR_CONFIG',
-        'SERVER_CONFIG',
-        'METRICS_ENDPOINT',
-        'METRIC_NAMES',
-        'SYSTEM_METRIC_NAMES',
-        'WIFI_CONFIG',
-        'OTA_CONFIG',
-        'ENVIRONMENT',
-        'DEPLOYMENT_TYPE',
-        'MONITORING_CONFIG',
-        'LOADED_ENVIRONMENT'
-    ]
-except:
-    pass
+    # Apply environment-specific overrides
+    if environment == 'development':
+        print(f"Applying development overrides...")
+        # Override for development environment
+        OTA_CONFIG["github_repo"]["branch"] = "dev"
+        OTA_CONFIG["check_interval"] = 1800  # 30 minutes
+        SENSOR_CONFIG["read_interval"] = 10  # Faster for testing
+
+        # Development environment variables
+        ENVIRONMENT = "development"
+        DEPLOYMENT_TYPE = "testing"
+
+    elif environment == 'production':
+        print(f"Applying production overrides...")
+        # Override for production environment
+        OTA_CONFIG["github_repo"]["branch"] = "main"
+        OTA_CONFIG["check_interval"] = 3600  # 1 hour
+        SENSOR_CONFIG["read_interval"] = 30  # Standard interval
+
+        # Production environment variables
+        ENVIRONMENT = "production"
+        DEPLOYMENT_TYPE = "stable"
+
+    LOADED_ENVIRONMENT = environment
+
+except Exception as e:
+    print(f"Failed to apply environment overrides: {e}")
+    print("Using base configuration only...")
+    LOADED_ENVIRONMENT = 'base'
+    ENVIRONMENT = "unknown"
+    DEPLOYMENT_TYPE = "unknown"
 
 print(f"Configuration loaded: {LOADED_ENVIRONMENT} environment")
-if 'OTA_CONFIG' in globals():
-    print(f"OTA branch: {OTA_CONFIG['github_repo']['branch']}")
+print(f"OTA branch: {OTA_CONFIG['github_repo']['branch']}")
