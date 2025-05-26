@@ -26,8 +26,8 @@ from config import (
     WIFI_CONFIG,
 )
 
-# Record boot time for accurate uptime calculation
-boot_time = time.time()
+# Record boot time using ticks for accurate uptime calculation
+boot_ticks = time.ticks_ms()
 
 # Wi-Fi Setup
 ssid = secrets["ssid"]
@@ -160,12 +160,13 @@ def format_metrics(temperature, humidity):
             f'pico_version_info{{version="{current_version}"}} 1',
         ])
 
-    # System uptime (actual time since boot)
-    uptime_seconds = time.time() - boot_time
+    # System uptime (actual time since boot using ticks)
+    uptime_ms = time.ticks_diff(time.ticks_ms(), boot_ticks)
+    uptime_seconds = uptime_ms // 1000
     metrics.extend([
         "# HELP pico_uptime_seconds Actual uptime in seconds since boot",
         "# TYPE pico_uptime_seconds counter",
-        f"pico_uptime_seconds {uptime_seconds:.0f}",
+        f"pico_uptime_seconds {uptime_seconds}",
     ])
 
 
