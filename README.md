@@ -49,8 +49,8 @@ pico-w-prometheus-dht22/
 │   ├── prometheus.yml                # Prometheus scrape config
 │   └── grafana-dashboard.json        # Grafana dashboard template
 ├── .github/                          # GitHub Actions workflows
-│   └── workflows/
-│       └── release.yml               # Automated release creation
+    └── workflows/
+        └── release.yml               # Automated release creation
 ```
 
 ---
