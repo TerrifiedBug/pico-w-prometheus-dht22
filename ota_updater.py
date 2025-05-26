@@ -142,32 +142,72 @@ class GitHubOTAUpdater:
         """
         try:
             print("Checking for updates...")
-            url = f"{self.api_base}/releases/latest"
 
-            # Try API endpoint with proper headers
-            success, response_or_error = self._make_request(url)
+            # For dev branch, check all releases including prereleases
+            if self.branch == "dev":
+                url = f"{self.api_base}/releases"
+                print(f"Checking dev releases from: {url}")
 
-            if not success:
-                print(f"API request failed: {response_or_error}")
-                # Try fallback method using raw files
-                return self._check_updates_fallback()
+                success, response_or_error = self._make_request(url)
 
-            try:
-                release_data = response_or_error.json()
-                response_or_error.close()
-            except Exception as e:
-                print(f"Failed to parse JSON response: {e}")
-                response_or_error.close()
-                return self._check_updates_fallback()
+                if not success:
+                    print(f"API request failed: {response_or_error}")
+                    return self._check_updates_fallback()
 
-            latest_version = release_data["tag_name"]
-            current_version = self.get_current_version()
+                try:
+                    releases_data = response_or_error.json()
+                    response_or_error.close()
+                except Exception as e:
+                    print(f"Failed to parse JSON response: {e}")
+                    response_or_error.close()
+                    return self._check_updates_fallback()
 
-            print(f"Current version: {current_version}")
-            print(f"Latest version: {latest_version}")
+                # Find the latest dev release (prerelease with dev- prefix)
+                latest_dev_release = None
+                for release in releases_data:
+                    if release["prerelease"] and release["tag_name"].startswith("dev-"):
+                        latest_dev_release = release
+                        break  # Releases are ordered by date, so first match is latest
 
-            has_update = latest_version != current_version
-            return has_update, latest_version, release_data
+                if not latest_dev_release:
+                    print("No dev releases found")
+                    return False, None, None
+
+                latest_version = latest_dev_release["tag_name"]
+                current_version = self.get_current_version()
+
+                print(f"Current version: {current_version}")
+                print(f"Latest dev version: {latest_version}")
+
+                has_update = latest_version != current_version
+                return has_update, latest_version, latest_dev_release
+
+            else:
+                # For main branch, use latest stable release
+                url = f"{self.api_base}/releases/latest"
+
+                success, response_or_error = self._make_request(url)
+
+                if not success:
+                    print(f"API request failed: {response_or_error}")
+                    return self._check_updates_fallback()
+
+                try:
+                    release_data = response_or_error.json()
+                    response_or_error.close()
+                except Exception as e:
+                    print(f"Failed to parse JSON response: {e}")
+                    response_or_error.close()
+                    return self._check_updates_fallback()
+
+                latest_version = release_data["tag_name"]
+                current_version = self.get_current_version()
+
+                print(f"Current version: {current_version}")
+                print(f"Latest version: {latest_version}")
+
+                has_update = latest_version != current_version
+                return has_update, latest_version, release_data
 
         except Exception as e:
             print(f"Update check failed: {e}")
