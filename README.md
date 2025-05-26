@@ -28,6 +28,7 @@ A lightweight MicroPython-based HTTP server for the Raspberry Pi Pico W that exp
 ```
 .
 ├── main.py          # Wi-Fi + HTTP server + sensor reading
+├── config.py        # Config file
 ├── secrets.py       # Wi-Fi credentials
 ├── README.md        # This file
 ```
