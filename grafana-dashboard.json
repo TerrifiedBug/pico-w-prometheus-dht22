@@ -50,7 +50,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 24,
+        "w": 12,
         "x": 0,
         "y": 0
       },
@@ -78,7 +78,10 @@
       "repeatDirection": "h",
       "targets": [
         {
+          "editorMode": "code",
           "expr": "last_over_time(pico_temperature_celsius{location=\"$location\"}[5m])",
+          "legendFormat": "{{location}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -114,9 +117,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 24,
-        "x": 0,
-        "y": 4
+        "w": 12,
+        "x": 12,
+        "y": 0
       },
       "id": 4,
       "maxPerRow": 2,
@@ -142,7 +145,10 @@
       "repeatDirection": "h",
       "targets": [
         {
+          "editorMode": "code",
           "expr": "last_over_time(pico_humidity_percent{location=\"$location\"}[5m])",
+          "legendFormat": "{{location}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -213,7 +219,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 5
       },
       "id": 1,
       "options": {
@@ -308,7 +314,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 13
       },
       "id": 2,
       "options": {
@@ -344,9 +350,7 @@
     "list": [
       {
         "current": {
-          "text": [
-            "All"
-          ],
+          "text": "All",
           "value": [
             "$__all"
           ]
@@ -367,12 +371,12 @@
     ]
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Temperature & Humidity Dashboard",
   "uid": "5827ff59-80a0-4bcc-a141-a3ee55f1298b",
-  "version": 5
+  "version": 8
 }
