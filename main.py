@@ -173,7 +173,14 @@ def format_metrics(temperature, humidity):
 
     # System uptime (actual time since boot using ticks)
     uptime_ms = time.ticks_diff(time.ticks_ms(), boot_ticks)
-    uptime_seconds = uptime_ms // 1000
+
+    # Handle potential negative values from tick wraparound
+    if uptime_ms < 0:
+        # If negative, likely due to tick counter wraparound (every ~12.4 days)
+        # Calculate using the wraparound period (2^30 ms for MicroPython)
+        uptime_ms = uptime_ms + (1 << 30)
+
+    uptime_seconds = max(0, uptime_ms // 1000)  # Ensure non-negative
     metrics.extend([
         "# HELP pico_uptime_seconds Actual uptime in seconds since boot",
         "# TYPE pico_uptime_seconds counter",
@@ -448,9 +455,16 @@ def handle_health_check():
         # Check OTA status
         ota_status = "OK" if ota_updater else "DISABLED"
 
-        # Get system information
+        # Get system information with proper tick wraparound handling
         uptime_ms = time.ticks_diff(time.ticks_ms(), boot_ticks)
-        uptime_seconds = uptime_ms // 1000
+
+        # Handle potential negative values from tick wraparound
+        if uptime_ms < 0:
+            # If negative, likely due to tick counter wraparound (every ~12.4 days)
+            # Calculate using the wraparound period (2^30 ms for MicroPython)
+            uptime_ms = uptime_ms + (1 << 30)
+
+        uptime_seconds = max(0, uptime_ms // 1000)  # Ensure non-negative
         uptime_hours = uptime_seconds // 3600
         uptime_minutes = (uptime_seconds % 3600) // 60
 
