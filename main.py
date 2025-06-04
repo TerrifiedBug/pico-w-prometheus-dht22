@@ -402,11 +402,11 @@ Target Version: {target_version}
 Repository: {status_info['repo']}
 
 Update Process:
-[✓] Update scheduled
-[{"✓" if time_remaining <= 0 else "⏳"}] Waiting for start time
-[{"✓" if update_status in ["applying", "restarting"] else "⏳"}] Download update files
-[{"✓" if update_status == "restarting" else "⏳"}] Apply update and backup
-[{"✓" if update_status == "restarting" else "⏳"}] Device restart
+[X] Update scheduled
+[{"X" if time_remaining <= 0 else "O"}] Waiting for start time
+[{"X" if update_status in ["applying", "restarting"] else "O"}] Download update files
+[{"X" if update_status == "restarting" else "O"}] Apply update and backup
+[{"X" if update_status == "restarting" else "O"}] Device restart
 
 Current Step: {message}
 
