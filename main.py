@@ -234,13 +234,16 @@ Current Version: {current_version}
 Target Version: {new_version}
 Update will start in: 10 seconds
 
-What happens next:
-1. The update will begin automatically after 10 seconds
-2. Device will restart during update (normal behavior)
-3. Wait 30-60 seconds for update to complete
-4. Visit /health to confirm new version
+IMPORTANT: What happens during update:
+1. Update begins automatically after 10 seconds
+2. Status page will show progress briefly
+3. Device WILL RESTART during update (this is normal!)
+4. Web page will timeout when device restarts
+5. Wait 60-90 seconds for update to complete
+6. Device will come back online automatically
+7. Visit /health to confirm new version
 
-Visit /update/status to monitor progress.
+Visit /update/status to monitor initial progress.
 """
         return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nRefresh: 3; url=/update/status\r\n\r\n{response_text}"
 
@@ -404,13 +407,14 @@ Repository: {status_info['repo']}
 Update Process:
 [X] Update scheduled
 [{"X" if time_remaining <= 0 else "O"}] Waiting for start time
-[{"X" if update_status in ["applying", "restarting"] else "O"}] Download update files
-[{"X" if update_status == "restarting" else "O"}] Apply update and backup
+[{"X" if update_status in ["downloading", "applying", "restarting"] else "O"}] Download update files
+[{"X" if update_status in ["applying", "restarting"] else "O"}] Apply update and backup
 [{"X" if update_status == "restarting" else "O"}] Device restart
 
 Current Step: {message}
 
-Note: This page auto-refreshes. After restart, visit /health to verify update.
+IMPORTANT: When device restarts, this page will timeout and stop responding.
+This is NORMAL behavior! Wait 60-90 seconds, then visit /health to verify update.
 """
             return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nRefresh: 2\r\n\r\n{status_text_response}"
         else:
