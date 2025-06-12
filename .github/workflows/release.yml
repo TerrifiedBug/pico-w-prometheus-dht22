@@ -9,6 +9,9 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
 
     steps:
       - name: Checkout code
@@ -124,42 +127,36 @@ jobs:
           echo "notes_file=release_notes.md" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
-        id: create_release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          release_name: ${{ steps.release_type.outputs.release_name }}
-          body_path: release_notes.md
-          draft: false
-          prerelease: ${{ steps.release_type.outputs.prerelease }}
-
-      - name: Upload firmware package
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./firmware-${{ steps.version.outputs.version }}.zip
-          asset_name: firmware-${{ steps.version.outputs.version }}.zip
-          asset_content_type: application/zip
-
-      - name: Upload individual files (for direct download)
         run: |
-          # Upload key files individually for easy access
+          # Create release using GitHub CLI
+          if [[ "${{ steps.release_type.outputs.prerelease }}" == "true" ]]; then
+            gh release create ${{ steps.version.outputs.version }} \
+              --title "${{ steps.release_type.outputs.release_name }}" \
+              --notes-file release_notes.md \
+              --prerelease
+          else
+            gh release create ${{ steps.version.outputs.version }} \
+              --title "${{ steps.release_type.outputs.release_name }}" \
+              --notes-file release_notes.md
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload firmware package and individual files
+        run: |
+          # Upload firmware package
+          gh release upload ${{ steps.version.outputs.version }} \
+            ./firmware-${{ steps.version.outputs.version }}.zip
+
+          # Upload individual files for easy access
           for file in firmware/main.py firmware/version.txt; do
             if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "Uploading $filename..."
-
-              curl -X POST \
-                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary @"$file" \
-                "${{ steps.create_release.outputs.upload_url }}?name=$filename&label=$filename"
+              echo "Uploading $(basename "$file")..."
+              gh release upload ${{ steps.version.outputs.version }} "$file"
             fi
           done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release Summary
         run: |
@@ -167,7 +164,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Type:** ${{ steps.release_type.outputs.prerelease == 'true' && 'Development' || 'Production' }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Release URL:** ${{ steps.create_release.outputs.html_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Assets Created:" >> $GITHUB_STEP_SUMMARY
           echo "- firmware-${{ steps.version.outputs.version }}.zip (Complete firmware package)" >> $GITHUB_STEP_SUMMARY
