@@ -25,6 +25,12 @@ from config import (
     SERVER_CONFIG,
     WIFI_CONFIG,
 )
+from device_config import (
+    load_device_config,
+    save_device_config,
+    validate_config_input,
+    get_config_for_metrics,
+)
 
 # Record boot time using ticks for accurate uptime calculation
 boot_ticks = time.ticks_ms()
@@ -127,51 +133,60 @@ def read_dht22():
 # HTTP Server (Prometheus-style)
 def format_metrics(temperature, humidity):
     """
-    Format temperature, humidity, and system health as Prometheus metrics.
+    Format temperature, humidity, and system health as Prometheus metrics with dynamic labels.
 
     Args:
         temperature (float): Temperature reading in Celsius.
         humidity (float): Humidity reading as a percentage.
 
     Returns:
-        str: Formatted Prometheus metrics string with HELP and TYPE comments.
+        str: Formatted Prometheus metrics string with HELP and TYPE comments and dynamic labels.
     """
-    # Basic sensor metrics
+    # Get device configuration for labels
+    config = get_config_for_metrics()
+    location = config["location"]
+    device = config["device"]
+
+    # Create label string for metrics
+    labels = f'{{location="{location}",device="{device}"}}'
+
+    # Basic sensor metrics with labels
     metrics = []
 
-    # Temperature and humidity
+    # Temperature and humidity with dynamic labels
     metrics.extend([
         f"# HELP {METRIC_NAMES['temperature']} Temperature in Celsius",
         f"# TYPE {METRIC_NAMES['temperature']} gauge",
-        f"{METRIC_NAMES['temperature']} {temperature}",
+        f"{METRIC_NAMES['temperature']}{labels} {temperature}",
         f"# HELP {METRIC_NAMES['humidity']} Humidity in Percent",
         f"# TYPE {METRIC_NAMES['humidity']} gauge",
-        f"{METRIC_NAMES['humidity']} {humidity}",
+        f"{METRIC_NAMES['humidity']}{labels} {humidity}",
     ])
 
-    # System health metrics
+    # System health metrics with labels
     sensor_status = 1 if temperature is not None else 0
     ota_status = 1 if ota_updater else 0
 
     metrics.extend([
         "# HELP pico_sensor_status Sensor health status (1=OK, 0=FAIL)",
         "# TYPE pico_sensor_status gauge",
-        f"pico_sensor_status {sensor_status}",
+        f"pico_sensor_status{labels} {sensor_status}",
         "# HELP pico_ota_status OTA system status (1=enabled, 0=disabled)",
         "# TYPE pico_ota_status gauge",
-        f"pico_ota_status {ota_status}",
+        f"pico_ota_status{labels} {ota_status}",
     ])
 
-    # Version information
+    # Version information with labels
     if ota_updater:
         current_version = ota_updater.get_current_version()
+        version_labels = f'{{location="{location}",device="{device}",version="{current_version}"}}'
         metrics.extend([
             "# HELP pico_version_info Current firmware version",
             "# TYPE pico_version_info gauge",
-            f'pico_version_info{{version="{current_version}"}} 1',
+            f"pico_version_info{version_labels} 1",
         ])
 
-    # System uptime (actual time since boot using ticks)
+    # System uptime (actual time since boot using ticks) with labels
     uptime_ms = time.ticks_diff(time.ticks_ms(), boot_ticks)
 
     # Handle potential negative values from tick wraparound
@@ -184,9 +199,8 @@ def format_metrics(temperature, humidity):
     metrics.extend([
         "# HELP pico_uptime_seconds Actual uptime in seconds since boot",
         "# TYPE pico_uptime_seconds counter",
-        f"pico_uptime_seconds {uptime_seconds}",
+        f"pico_uptime_seconds{labels} {uptime_seconds}",
     ])
-
 
     return "\n".join(metrics) + "\n"
 
@@ -444,6 +458,26 @@ Available Actions:
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nStatus error: {e}"
 
 
+
+Sensor Status: {sensor_status}
+Temperature: {temp if temp is not None else "ERROR"}C
+Humidity: {hum if hum is not None else "ERROR"}%
+
+Network Status: {wifi_status}
+IP Address: {ip_address}
+
+OTA Status: {ota_status}
+Version: {ota_updater.get_current_version() if ota_updater else "unknown"}
+
+System Info:
+Uptime: {uptime_hours:02d}:{uptime_minutes:02d}
+Free Memory: {free_memory:,} bytes
+"""
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{health_info}"
+
+    except Exception as e:
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nHealth check failed: {e}"
 def handle_health_check():
     """
     Handle health check request.
@@ -482,6 +516,297 @@ def handle_health_check():
         free_memory = gc.mem_free()
 
         health_info = f"""System Health Check
+
+Sensor Status: {sensor_status}
+Temperature: {temp if temp is not None else "ERROR"}C
+Humidity: {hum if hum is not None else "ERROR"}%
+
+Network Status: {wifi_status}
+IP Address: {ip_address}
+
+OTA Status: {ota_status}
+Version: {ota_updater.get_current_version() if ota_updater else "unknown"}
+
+System Info:
+Uptime: {uptime_hours:02d}:{uptime_minutes:02d}
+Free Memory: {free_memory:,} bytes
+"""
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{health_info}"
+
+    except Exception as e:
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nHealth check failed: {e}"
+
+
+def handle_config_page():
+    """
+    Handle configuration page request - show enhanced HTML form with device and OTA settings.
+
+    Returns:
+        str: HTTP response with HTML configuration form.
+    """
+    try:
+        # Load current configuration
+        config = load_device_config()
+        device_config = config.get("device", {})
+        ota_config = config.get("ota", {})
+
+        location = device_config.get("location", "default-location")
+        device_name = device_config.get("name", "default-device")
+        description = device_config.get("description", "")
+        last_updated = config.get("last_updated", "Never")
+
+        # OTA settings
+        ota_enabled = ota_config.get("enabled", True)
+        auto_update = ota_config.get("auto_update", True)
+        update_interval = ota_config.get("update_interval", 1.0)
+        github_repo = ota_config.get("github_repo", {})
+        repo_owner = github_repo.get("owner", "TerrifiedBug")
+        repo_name = github_repo.get("name", "pico-w-prometheus-dht22")
+        branch = github_repo.get("branch", "main")
+
+        # Generate HTML form with tabs
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Device Configuration</title>
+    <style>
+        body {{ font-family: monospace; margin: 40px; background: #f9f9f9; }}
+        .container {{ max-width: 800px; background: white; padding: 30px; border: 1px solid #ddd; }}
+        .tabs {{ display: flex; margin-bottom: 20px; border-bottom: 2px solid #ddd; }}
+        .tab {{ padding: 10px 20px; cursor: pointer; background: #f0f0f0; border: 1px solid #ddd; margin-right: 5px; }}
+        .tab.active {{ background: #007bff; color: white; }}
+        .tab-content {{ display: none; }}
+        .tab-content.active {{ display: block; }}
+        .form-group {{ margin: 15px 0; }}
+        .form-row {{ display: flex; gap: 15px; }}
+        .form-row .form-group {{ flex: 1; }}
+        label {{ display: block; margin-bottom: 5px; font-weight: bold; }}
+        input, textarea, select {{ width: 100%; padding: 8px; font-family: monospace; border: 1px solid #ccc; box-sizing: border-box; }}
+        input[type="checkbox"] {{ width: auto; }}
+        button {{ padding: 12px 24px; margin-top: 20px; background: #007bff; color: white; border: none; cursor: pointer; }}
+        button:hover {{ background: #0056b3; }}
+        .current-config {{ background: #e9ecef; padding: 15px; margin-bottom: 20px; border-left: 4px solid #007bff; }}
+        .nav {{ margin-bottom: 20px; }}
+        .nav a {{ color: #007bff; text-decoration: none; margin-right: 20px; }}
+        .nav a:hover {{ text-decoration: underline; }}
+        .note {{ margin-top: 20px; padding: 15px; background: #fff3cd; border: 1px solid #ffeaa7; }}
+    </style>
+    <script>
+        function showTab(tabName) {{
+            // Hide all tab contents
+            var contents = document.getElementsByClassName('tab-content');
+            for (var i = 0; i < contents.length; i++) {{
+                contents[i].classList.remove('active');
+            }}
+
+            // Remove active class from all tabs
+            var tabs = document.getElementsByClassName('tab');
+            for (var i = 0; i < tabs.length; i++) {{
+                tabs[i].classList.remove('active');
+            }}
+
+            // Show selected tab content and mark tab as active
+            document.getElementById(tabName + '-content').classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+        }}
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Device Configuration</h1>
+
+        <div class="nav">
+            <a href="/">← Back to Main Menu</a>
+            <a href="/health">Health Check</a>
+            <a href="/metrics">View Metrics</a>
+            <a href="/update/status">OTA Status</a>
+        </div>
+
+        <div class="current-config">
+            <h3>Current Configuration:</h3>
+            <strong>Location:</strong> {location} | <strong>Device:</strong> {device_name}<br>
+            <strong>Description:</strong> {description if description else "(none)"}<br>
+            <strong>OTA:</strong> {"Enabled" if ota_enabled else "Disabled"} | <strong>Auto Update:</strong> {"Yes" if auto_update else "No"}<br>
+            <strong>Repository:</strong> {repo_owner}/{repo_name} ({branch}) | <strong>Interval:</strong> {update_interval}h<br>
+            <strong>Last Updated:</strong> {last_updated}
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" id="device-tab" onclick="showTab('device')">Device Settings</div>
+            <div class="tab" id="ota-tab" onclick="showTab('ota')">OTA Settings</div>
+        </div>
+
+        <form method="POST">
+            <!-- Device Settings Tab -->
+            <div class="tab-content active" id="device-content">
+                <h3>Device Settings</h3>
+                <div class="form-group">
+                    <label for="location">Location:</label>
+                    <input type="text" id="location" name="location" value="{location}" placeholder="e.g., bedroom, kitchen, living-room">
+                </div>
+
+                <div class="form-group">
+                    <label for="device">Device Name:</label>
+                    <input type="text" id="device" name="device" value="{device_name}" placeholder="e.g., sensor-01, temp-sensor">
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description (optional):</label>
+                    <textarea id="description" name="description" rows="3" placeholder="Optional description of this sensor">{description}</textarea>
+                </div>
+            </div>
+
+            <!-- OTA Settings Tab -->
+            <div class="tab-content" id="ota-content">
+                <h3>OTA Update Settings</h3>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="ota_enabled" {"checked" if ota_enabled else ""}> Enable OTA Updates
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="auto_update" {"checked" if auto_update else ""}> Enable Automatic Updates
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label for="update_interval">Update Check Interval (hours):</label>
+                    <input type="number" id="update_interval" name="update_interval" value="{update_interval}" min="0.5" max="168" step="0.5">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="repo_owner">GitHub Repository Owner:</label>
+                        <input type="text" id="repo_owner" name="repo_owner" value="{repo_owner}">
+                    </div>
+                    <div class="form-group">
+                        <label for="repo_name">Repository Name:</label>
+                        <input type="text" id="repo_name" name="repo_name" value="{repo_name}">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="branch">Branch:</label>
+                    <select id="branch" name="branch">
+                        <option value="main" {"selected" if branch == "main" else ""}>main (stable releases)</option>
+                        <option value="dev" {"selected" if branch == "dev" else ""}>dev (development releases)</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit">Save Configuration</button>
+        </form>
+
+        <div class="note">
+            <strong>Note:</strong> Device settings take effect immediately. OTA settings will be applied on next update check or restart.
+        </div>
+    </div>
+</body>
+</html>"""
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html}"
+
+    except Exception as e:
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nConfiguration page error: {e}"
+
+
+def parse_form_data(request):
+    """
+    Parse form data from HTTP POST request.
+
+    Args:
+        request (bytes): Raw HTTP request data
+
+    Returns:
+        dict: Parsed form data
+    """
+    try:
+        # Decode request and split into lines
+        request_str = request.decode('utf-8')
+        lines = request_str.split('\r\n')
+
+        # Find the form data (after empty line)
+        form_data_line = ""
+        found_empty = False
+        for line in lines:
+            if found_empty and line:
+                form_data_line = line
+                break
+            if line == "":
+                found_empty = True
+
+        if not form_data_line:
+            return {}
+
+        # Parse URL-encoded form data
+        form_data = {}
+        pairs = form_data_line.split('&')
+        for pair in pairs:
+            if '=' in pair:
+                key, value = pair.split('=', 1)
+                # URL decode
+                key = key.replace('+', ' ')
+                value = value.replace('+', ' ')
+                # Basic URL decoding for common characters
+                value = value.replace('%20', ' ')
+                value = value.replace('%21', '!')
+                value = value.replace('%22', '"')
+                value = value.replace('%23', '#')
+                value = value.replace('%24', '$')
+                value = value.replace('%25', '%')
+                value = value.replace('%26', '&')
+                value = value.replace('%27', "'")
+                value = value.replace('%28', '(')
+                value = value.replace('%29', ')')
+                value = value.replace('%2A', '*')
+                value = value.replace('%2B', '+')
+                value = value.replace('%2C', ',')
+                value = value.replace('%2D', '-')
+                value = value.replace('%2E', '.')
+                value = value.replace('%2F', '/')
+
+                form_data[key] = value
+
+        return form_data
+
+    except Exception as e:
+        print(f"Error parsing form data: {e}")
+        return {}
+
+
+def handle_config_update(request):
+    """
+    Handle configuration update from POST request.
+
+    Args:
+        request (bytes): Raw HTTP request data
+
+    Returns:
+        str: HTTP response for configuration update
+    """
+    try:
+        # Parse form data
+        form_data = parse_form_data(request)
+        print(f"Received config update: {form_data}")
+
+        # Validate and process configuration
+        config = validate_config_input(form_data)
+
+        # Save configuration
+        if save_device_config(config):
+            print(f"Configuration updated: {config['device']['location']}/{config['device']['name']}")
+            # Redirect back to config page to show updated values
+            return "HTTP/1.0 302 Found\r\nLocation: /config\r\n\r\n"
+        else:
+            return "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to save configuration"
+
+    except Exception as e:
+        print(f"Configuration update failed: {e}")
+        return f"HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nConfiguration update failed: {e}"
 ===================
 
 Sensor Status: {sensor_status}
@@ -565,11 +890,22 @@ while True:
             response = handle_health_check()
             cl.send(response)
 
+        elif method == "GET" and path == "/config":
+            # Configuration page endpoint
+            response = handle_config_page()
+            cl.send(response)
+
+        elif method == "POST" and path == "/config":
+            # Configuration update endpoint
+            response = handle_config_update(request)
+            cl.send(response)
+
         elif method == "GET" and path == "/":
             # Root endpoint - show available endpoints
             endpoints_info = f"""Available endpoints:
 {METRICS_ENDPOINT} - Prometheus metrics
 /health - Health check
+/config - Device configuration
 /update/status - Update status
 /update - Trigger OTA update
 """

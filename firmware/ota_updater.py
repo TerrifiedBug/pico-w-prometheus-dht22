@@ -22,12 +22,9 @@ class GitHubOTAUpdater:
     """
 
     def __init__(self):
-        """Initialize the OTA updater with configuration from config.py"""
-        self.repo_owner = OTA_CONFIG["github_repo"]["owner"]
-        self.repo_name = OTA_CONFIG["github_repo"]["name"]
-        self.branch = OTA_CONFIG["github_repo"]["branch"]
-        self.update_files = OTA_CONFIG["update_files"]
-        self.backup_enabled = OTA_CONFIG["backup_enabled"]
+        """Initialize the OTA updater with dynamic configuration"""
+        # Load dynamic configuration
+        self._load_dynamic_config()
 
         # GitHub API URLs
         self.api_base = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}"
@@ -39,6 +36,57 @@ class GitHubOTAUpdater:
 
         # Ensure directories exist
         self._ensure_directories()
+
+    def _load_dynamic_config(self):
+        """Load configuration from device_config.py"""
+        try:
+            from device_config import get_ota_config
+            ota_config = get_ota_config()
+
+            self.repo_owner = ota_config["github_repo"]["owner"]
+            self.repo_name = ota_config["github_repo"]["name"]
+            self.branch = ota_config["github_repo"]["branch"]
+            self.backup_enabled = ota_config["backup_enabled"]
+
+            # Get firmware files dynamically
+            self.update_files = self._get_firmware_files()
+
+        except Exception as e:
+            print(f"Failed to load dynamic config, using fallback: {e}")
+            # Fallback to static config
+            self.repo_owner = OTA_CONFIG["github_repo"]["owner"]
+            self.repo_name = OTA_CONFIG["github_repo"]["name"]
+            self.branch = OTA_CONFIG["github_repo"]["branch"]
+            self.backup_enabled = OTA_CONFIG["backup_enabled"]
+            self.update_files = ["main.py", "config.py", "ota_updater.py", "device_config.py", "version.txt"]
+
+    def _get_firmware_files(self):
+        """
+        Get list of firmware files to update.
+        Returns all .py files plus version.txt and secrets.py.example
+        """
+        firmware_files = []
+
+        # Standard firmware files that should always be updated
+        standard_files = ["main.py", "config.py", "ota_updater.py", "device_config.py", "version.txt", "secrets.py.example"]
+
+        # Try to get actual file list from local directory
+        try:
+            import os
+            for filename in os.listdir('.'):
+                if filename.endswith('.py') or filename in ['version.txt', 'secrets.py.example']:
+                    if filename not in firmware_files:
+                        firmware_files.append(filename)
+        except:
+            # Fallback to standard list
+            firmware_files = standard_files
+
+        # Ensure we have the essential files
+        for essential_file in standard_files:
+            if essential_file not in firmware_files:
+                firmware_files.append(essential_file)
+
+        return firmware_files
 
     def _ensure_directories(self):
         """Create backup and temp directories if they don't exist"""

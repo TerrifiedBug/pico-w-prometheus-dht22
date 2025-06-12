@@ -65,6 +65,8 @@ WIFI_CONFIG = {
 }
 
 # BASE OTA UPDATE CONFIGURATION
+# Note: This is now primarily used as fallback.
+# Actual OTA config comes from device_config.py for dynamic configuration
 OTA_CONFIG = {
     "enabled": True,
     "auto_check": True,  # Automatically check for updates
@@ -76,11 +78,7 @@ OTA_CONFIG = {
     },
     "backup_enabled": True,  # Backup files before update
     "max_backup_versions": 3,  # Keep N backup versions
-    "update_files": [  # Files to update via OTA
-        "main.py",
-        "config.py",
-        "ota_updater.py",
-    ],
+    # update_files removed - now discovered dynamically from firmware/ directory
 }
 
 # =============================================================================

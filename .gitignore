@@ -1,5 +1,6 @@
 secrets.py
 internal-docs/
-
+memory-bank/
 # Version file (branch-specific) - each branch maintains its own
 version.txt
+

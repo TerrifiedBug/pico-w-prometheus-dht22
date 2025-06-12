@@ -1,104 +1,180 @@
-name: Create Release
+name: Create Firmware Release
 
 on:
   push:
     tags:
-      - "v*" # Production releases (v1.0.1, v2.0.0, etc.)
-      - "dev-*" # Development releases (dev-20250526-1234, etc.)
-    branches:
-      - dev # Auto-create dev releases on push to dev branch
-    paths:
-      - "main.py"
-      - "config.py"
-      - "ota_updater.py"
-  workflow_dispatch: # Allow manual triggering
+      - "v*" # Production releases (v1.0.0, v1.1.0, etc.)
+      - "dev-*" # Development releases (dev-1.0.0, dev-1.1.0, etc.)
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # Required for creating releases
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Determine release type and version
-        id: release_info
+      - name: Extract version from tag
+        id: version
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            # Production release from version tag
-            echo "release_type=production" >> $GITHUB_OUTPUT
-            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-            echo "prerelease=false" >> $GITHUB_OUTPUT
-            echo "release_name=Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/tags/dev-* ]]; then
-            # Development release from dev tag
-            echo "release_type=development" >> $GITHUB_OUTPUT
-            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Determine release type
+        id: release_type
+        run: |
+          if [[ "${{ steps.version.outputs.version }}" == dev-* ]]; then
             echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "release_name=Development Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/heads/dev ]]; then
-            # Always generate new dev version based on build timestamp
-            DEV_VERSION="dev-$(date +%Y%m%d-%H%M%S)"
-            echo "release_type=development" >> $GITHUB_OUTPUT
-            echo "version=$DEV_VERSION" >> $GITHUB_OUTPUT
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "release_name=Development Release $DEV_VERSION" >> $GITHUB_OUTPUT
-            echo "auto_tag=true" >> $GITHUB_OUTPUT
-            echo "Generated new dev version: $DEV_VERSION"
+            echo "release_name=Development Release ${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+            echo "This is a development release"
           else
-            echo "release_type=unknown" >> $GITHUB_OUTPUT
-            exit 1
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "release_name=Release ${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+            echo "This is a production release"
           fi
 
-      - name: Update version.txt for dev releases
-        if: steps.release_info.outputs.auto_tag == 'true'
+      - name: Create firmware package
         run: |
-          echo "${{ steps.release_info.outputs.version }}" > version.txt
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add version.txt
-          git commit -m "Auto-update version for dev release ${{ steps.release_info.outputs.version }}" || exit 0
+          echo "Creating firmware package..."
 
-      - name: Create tag for auto-generated dev releases
-        if: steps.release_info.outputs.auto_tag == 'true'
+          # Create release directory
+          mkdir -p release-package
+
+          # Copy all firmware files
+          cp firmware/* release-package/
+
+          # Update version.txt with the tag version
+          echo "${{ steps.version.outputs.version }}" > release-package/version.txt
+
+          # List files being packaged
+          echo "Files in firmware package:"
+          ls -la release-package/
+
+          # Create zip archive
+          cd release-package
+          zip -r ../firmware-${{ steps.version.outputs.version }}.zip .
+          cd ..
+
+          # Verify zip contents
+          echo "Zip file contents:"
+          unzip -l firmware-${{ steps.version.outputs.version }}.zip
+
+      - name: Generate release notes
+        id: release_notes
         run: |
-          git tag ${{ steps.release_info.outputs.version }}
-          git push origin ${{ steps.release_info.outputs.version }}
+          cat > release_notes.md << 'EOF'
+          ## Pico W Prometheus DHT22 Sensor Firmware
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.release_info.outputs.version }}
-          name: ${{ steps.release_info.outputs.release_name }}
-          body: |
-            ${{ steps.release_info.outputs.release_type == 'production' && '## 🚀 Production Release' || '## 🧪 Development Release' }} ${{ steps.release_info.outputs.version }}
+          ### 📦 What's Included
 
-            ${{ steps.release_info.outputs.release_type == 'production' && '**This is a stable production release ready for deployment.**' || '**This is a development release for testing new features.**' }}
+          This firmware package contains all files needed to run the Pico W Prometheus DHT22 sensor:
 
-            ### 📋 Release Information
-            - **Type**: ${{ steps.release_info.outputs.release_type == 'production' && 'Production' || 'Development/Testing' }}
-            - **Branch**: ${{ steps.release_info.outputs.release_type == 'production' && 'main' || 'dev' }}
-            - **Version**: ${{ steps.release_info.outputs.version }}
-            - **Date**: ${{ github.event.head_commit.timestamp }}
+          - **main.py** - Main application and HTTP server
+          - **ota_updater.py** - Over-the-air update functionality
+          - **config.py** - Configuration management
+          - **device_config.py** - Dynamic device configuration
+          - **secrets.py.example** - WiFi credentials template
+          - **version.txt** - Firmware version identifier
 
-            ${{ steps.release_info.outputs.release_type == 'development' && '### ⚠️ Development Release Notes
-            - This release is for testing purposes only
-            - May contain experimental features
-            - Not recommended for production use
-            - Configure your device to use `dev` branch for OTA updates
+          ### 🚀 Installation Instructions
 
-            ### 🔧 Testing Instructions
-            1. Update your device config: `"branch": "dev"`
-            2. Trigger OTA update via `/update` endpoint
-            3. Monitor progress on `/update/status` page' || '### 📦 Production Release Notes
-            - Stable release ready for production deployment
-            - Thoroughly tested features
-            - Recommended for all production devices
-            - Use `main` branch for OTA updates' }}
+          1. **Flash MicroPython** to your Pico W (if not already done)
+          2. **Download** the firmware zip file below
+          3. **Extract** all files to your Pico W root directory
+          4. **Copy** `secrets.py.example` to `secrets.py` and add your WiFi credentials
+          5. **Restart** your Pico W
 
-          draft: false
-          prerelease: ${{ steps.release_info.outputs.prerelease }}
+          ### 🔧 Configuration
+
+          After installation, visit `http://<pico-ip>/config` to configure:
+          - Device location and name
+          - OTA update settings
+          - GitHub repository settings
+
+          ### 📈 Prometheus Integration
+
+          Add your device to Prometheus configuration:
+
+          ```yaml
+          scrape_configs:
+            - job_name: "pico_sensors"
+              static_configs:
+                - targets: ["<pico-ip>:80"]
+          ```
+
+          Metrics will automatically include location and device labels.
+
+          ### 🔄 OTA Updates
+
+          This firmware supports over-the-air updates:
+          - Configure via web interface at `/config`
+          - Manual updates via `/update` endpoint
+          - Automatic update checking (configurable)
+
+          ### 📚 Documentation
+
+          - [Project README](https://github.com/${{ github.repository }})
+          - [Configuration Guide](https://github.com/${{ github.repository }}/blob/main/docs/README.md)
+          - [Troubleshooting](https://github.com/${{ github.repository }}/blob/main/docs/DYNAMIC_CONFIG_IMPLEMENTATION.md)
+
+          EOF
+
+          # Set output for use in release creation
+          echo "notes_file=release_notes.md" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: ${{ steps.release_type.outputs.release_name }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ steps.release_type.outputs.prerelease }}
+
+      - name: Upload firmware package
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./firmware-${{ steps.version.outputs.version }}.zip
+          asset_name: firmware-${{ steps.version.outputs.version }}.zip
+          asset_content_type: application/zip
+
+      - name: Upload individual files (for direct download)
+        run: |
+          # Upload key files individually for easy access
+          for file in firmware/main.py firmware/version.txt; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "Uploading $filename..."
+
+              curl -X POST \
+                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary @"$file" \
+                "${{ steps.create_release.outputs.upload_url }}?name=$filename&label=$filename"
+            fi
+          done
+
+      - name: Release Summary
+        run: |
+          echo "## 🎉 Release Created Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** ${{ steps.release_type.outputs.prerelease == 'true' && 'Development' || 'Production' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** ${{ steps.create_release.outputs.html_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Assets Created:" >> $GITHUB_STEP_SUMMARY
+          echo "- firmware-${{ steps.version.outputs.version }}.zip (Complete firmware package)" >> $GITHUB_STEP_SUMMARY
+          echo "- main.py (Individual file)" >> $GITHUB_STEP_SUMMARY
+          echo "- version.txt (Individual file)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Test the release on development devices" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update any devices using OTA updates" >> $GITHUB_STEP_SUMMARY
+          echo "3. Monitor device health after deployment" >> $GITHUB_STEP_SUMMARY
