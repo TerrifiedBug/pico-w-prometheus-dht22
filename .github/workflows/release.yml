@@ -144,17 +144,40 @@ jobs:
 
       - name: Upload firmware package and individual files
         run: |
-          # Upload firmware package
+          # Upload firmware package (new structure)
           gh release upload ${{ steps.version.outputs.version }} \
             ./firmware-${{ steps.version.outputs.version }}.zip
 
-          # Upload individual files for easy access
+          # Upload individual files from firmware/ directory (new structure)
           for file in firmware/main.py firmware/version.txt; do
             if [ -f "$file" ]; then
-              echo "Uploading $(basename "$file")..."
+              echo "Uploading $(basename "$file") from firmware/ directory..."
               gh release upload ${{ steps.version.outputs.version }} "$file"
             fi
           done
+
+          # BACKWARD COMPATIBILITY: Upload root-level files for older devices
+          echo "Creating backward compatibility files for older devices..."
+
+          # Copy firmware files to root level with correct names
+          cp firmware/main.py ./main.py
+          cp firmware/config.py ./config.py
+          cp firmware/ota_updater.py ./ota_updater.py
+          cp firmware/device_config.py ./device_config.py
+          cp firmware/secrets.py.example ./secrets.py.example
+
+          # Upload root-level files for backward compatibility (will overwrite the firmware/ versions)
+          echo "Uploading backward compatibility files at root level..."
+          gh release upload ${{ steps.version.outputs.version }} ./main.py --clobber
+          gh release upload ${{ steps.version.outputs.version }} ./config.py --clobber
+          gh release upload ${{ steps.version.outputs.version }} ./ota_updater.py --clobber
+          gh release upload ${{ steps.version.outputs.version }} ./device_config.py --clobber
+          gh release upload ${{ steps.version.outputs.version }} ./secrets.py.example --clobber
+
+          echo "✅ Uploaded root-level files for backward compatibility with older devices"
+
+          # Clean up temporary files
+          rm -f ./main.py ./config.py ./ota_updater.py ./device_config.py ./secrets.py.example
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -168,8 +191,13 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Assets Created:" >> $GITHUB_STEP_SUMMARY
           echo "- firmware-${{ steps.version.outputs.version }}.zip (Complete firmware package)" >> $GITHUB_STEP_SUMMARY
-          echo "- main.py (Individual file)" >> $GITHUB_STEP_SUMMARY
-          echo "- version.txt (Individual file)" >> $GITHUB_STEP_SUMMARY
+          echo "- main.py, config.py, ota_updater.py, device_config.py, secrets.py.example (Root-level files for backward compatibility)" >> $GITHUB_STEP_SUMMARY
+          echo "- version.txt (Version identifier)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔄 Backward Compatibility:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Old devices can update using root-level files" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ New deployments use firmware/ directory structure" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ No breaking changes for existing installations" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🚀 Next Steps:" >> $GITHUB_STEP_SUMMARY
           echo "1. Test the release on development devices" >> $GITHUB_STEP_SUMMARY
