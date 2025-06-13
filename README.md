@@ -61,23 +61,44 @@ Download the latest firmware package from the [Releases](https://github.com/Terr
 2. Hold BOOTSEL button while connecting USB
 3. Copy the `.uf2` file to the `RPI-RP2` drive
 
-### 3. Upload Firmware
+### 3. Configure WiFi Credentials
 
-Extract the firmware package and upload all files from the `firmware/` directory to your Pico W:
+**IMPORTANT**: You must configure WiFi credentials before uploading firmware.
+
+1. Extract the firmware package to your computer
+2. Copy `secrets.py.example` to `secrets.py`
+3. Edit `secrets.py` with your WiFi credentials:
+   ```python
+   secrets = {
+       "ssid": "YourWiFiNetworkName",
+       "pw": "YourWiFiPassword"
+   }
+   ```
+
+### 4. Upload Firmware
+
+Upload all files (including your configured `secrets.py`) to your Pico W:
 
 **Using Thonny IDE:**
 
 1. Connect to your Pico W
-2. Upload all files from `firmware/` to the device root directory
-3. Edit `secrets.py` with your WiFi credentials
+2. Upload ALL files from the extracted firmware package to device root directory
+3. Ensure `secrets.py` (with your credentials) is uploaded
+4. Restart your Pico W
 
 **Using mpremote:**
 
 ```bash
-cd firmware/
+# From the extracted firmware directory
 mpremote cp *.py version.txt :
 mpremote exec "import main"
 ```
+
+**⚠️ Security Notes:**
+
+- `secrets.py` is never updated by OTA (your credentials stay safe)
+- Keep a backup copy of your `secrets.py` file
+- If you change WiFi networks, manually update `secrets.py` on the device
 
 ### 4. Configure Device
 

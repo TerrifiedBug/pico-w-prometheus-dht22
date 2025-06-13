@@ -68,10 +68,11 @@ class GitHubOTAUpdater:
     def _get_firmware_files(self):
         """
         Get list of firmware files to update.
-        Returns all .py files plus version.txt and secrets.py.example
+        Returns all .py files plus version.txt (excludes secrets.py for security)
         """
         # Standard firmware files that should always be updated
-        return ["main.py", "config.py", "ota_updater.py", "device_config.py", "logger.py", "version.txt", "secrets.py.example"]
+        # NOTE: secrets.py is intentionally excluded to preserve WiFi credentials
+        return ["main.py", "config.py", "ota_updater.py", "device_config.py", "logger.py", "version.txt"]
 
     def _ensure_directories(self):
         """Create backup and temp directories if they don't exist"""

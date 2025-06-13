@@ -47,9 +47,25 @@ pending_update = {
     "message": "Ready for updates"
 }
 
-# Wi-Fi Setup
-ssid = secrets["ssid"]
-password = secrets["pw"]
+# Wi-Fi Setup with safety checks
+try:
+    ssid = secrets["ssid"]
+    password = secrets["pw"]
+
+    # Validate credentials are not empty
+    if not ssid or not password:
+        log_error("WiFi credentials are empty in secrets.py", "NETWORK")
+        raise ValueError("WiFi credentials not properly configured")
+
+    log_info(f"WiFi credentials loaded for network: {ssid}", "NETWORK")
+
+except KeyError as e:
+    log_error(f"Missing WiFi credential in secrets.py: {e}", "NETWORK")
+    raise RuntimeError(f"secrets.py missing required field: {e}")
+except Exception as e:
+    log_error(f"Error loading WiFi credentials: {e}", "NETWORK")
+    raise RuntimeError("WiFi credentials not properly configured")
+
 rp2.country(WIFI_CONFIG["country_code"])
 
 def connect_wifi():
