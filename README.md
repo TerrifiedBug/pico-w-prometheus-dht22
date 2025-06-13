@@ -34,16 +34,9 @@ pico-w-prometheus-dht22/
 ├── configs/                         # External configuration files
 │   ├── prometheus.yml               # Prometheus scrape config
 │   └── grafana-dashboard.json       # Grafana dashboard template
-├── docs/                           # Documentation
-│   ├── README.md                   # Detailed documentation
-│   └── DYNAMIC_CONFIG_IMPLEMENTATION.md # Implementation details
-├── tests/                          # Test files
-│   └── test_config.py              # Configuration tests
 ├── .github/                        # GitHub Actions workflows
 │   └── workflows/
 │       └── release.yml             # Automated release creation
-├── memory-bank/                    # Project knowledge base
-├── internal-docs/                  # Internal documentation
 └── .gitignore                      # Git ignore rules
 ```
 

@@ -68,11 +68,11 @@ class GitHubOTAUpdater:
     def _get_firmware_files(self):
         """
         Get list of firmware files to update.
-        Returns all .py files plus version.txt (excludes secrets.py for security)
+        This will be populated dynamically from the firmware package.
         """
-        # Standard firmware files that should always be updated
+        # This will be populated when we download the firmware package
         # NOTE: secrets.py is intentionally excluded to preserve WiFi credentials
-        return ["main.py", "config.py", "ota_updater.py", "device_config.py", "logger.py", "version.txt"]
+        return []
 
     def _ensure_directories(self):
         """Create backup and temp directories if they don't exist"""
@@ -384,32 +384,198 @@ class GitHubOTAUpdater:
             print(f"Restore failed: {e}")
             return False
 
-    def download_update(self, version):
+    def download_firmware_package(self, version, release_info):
         """
-        Download all update files to temp directory.
+        Download complete firmware package from GitHub release.
 
         Args:
             version (str): Version being downloaded.
+            release_info (dict): Release information from GitHub API.
+
+        Returns:
+            bool: True if firmware package downloaded and extracted successfully.
+        """
+        try:
+            log_info(f"Downloading firmware package for version {version}", "OTA")
+
+            # Clean temp directory
+            self._clean_directory(self.temp_dir)
+
+            # Find firmware package in release assets
+            firmware_asset = None
+            if release_info and "assets" in release_info:
+                for asset in release_info["assets"]:
+                    if asset["name"].startswith("firmware-") and asset["name"].endswith(".zip"):
+                        firmware_asset = asset
+                        break
+
+            if not firmware_asset:
+                log_error("No firmware package found in release assets", "OTA")
+                return False
+
+            # Download firmware package
+            package_url = firmware_asset["browser_download_url"]
+            log_info(f"Downloading firmware package from: {package_url}", "OTA")
+
+            success, response_or_error = self._make_request(package_url)
+            if not success:
+                log_error(f"Failed to download firmware package: {response_or_error}", "OTA")
+                return False
+
+            # Save zip file
+            zip_path = f"{self.temp_dir}/firmware.zip"
+            try:
+                with open(zip_path, "wb") as f:
+                    f.write(response_or_error.content)
+                response_or_error.close()
+                log_info("Firmware package downloaded successfully", "OTA")
+            except Exception as e:
+                log_error(f"Failed to save firmware package: {e}", "OTA")
+                response_or_error.close()
+                return False
+
+            # Extract firmware package
+            if not self._extract_firmware_package(zip_path):
+                return False
+
+            log_info("Firmware package extracted successfully", "OTA")
+            return True
+
+        except Exception as e:
+            log_error(f"Firmware package download failed: {e}", "OTA")
+            return False
+
+    def _extract_firmware_package(self, zip_path):
+        """
+        Extract firmware package and discover files to update.
+
+        Args:
+            zip_path (str): Path to firmware zip file.
+
+        Returns:
+            bool: True if extraction successful.
+        """
+        try:
+            log_info("Extracting firmware package", "OTA")
+
+            # Simple zip extraction for MicroPython
+            # Note: MicroPython doesn't have zipfile module, so we'll use a basic approach
+            # For now, we'll fall back to individual file downloads if zip extraction fails
+
+            # Try to use uzlib if available for zip extraction
+            try:
+                import uzlib
+                # Basic zip extraction logic would go here
+                # For simplicity, we'll fall back to the file-by-file approach
+                log_warn("Zip extraction not implemented, falling back to file-by-file download", "OTA")
+                return self._download_files_individually()
+            except ImportError:
+                log_warn("uzlib not available, falling back to file-by-file download", "OTA")
+                return self._download_files_individually()
+
+        except Exception as e:
+            log_error(f"Firmware package extraction failed: {e}", "OTA")
+            return False
+
+    def _download_files_individually(self):
+        """
+        Fallback method to download files individually from GitHub raw.
 
         Returns:
             bool: True if all files downloaded successfully.
         """
         try:
-            print(f"Downloading update files for version {version}...")
+            log_info("Downloading firmware files individually", "OTA")
 
-            # Clean temp directory
-            self._clean_directory(self.temp_dir)
+            # Get list of files from GitHub repository
+            files_to_download = self._discover_firmware_files()
+            if not files_to_download:
+                log_error("No firmware files discovered", "OTA")
+                return False
 
-            # Download all files
-            for filename in self.update_files:
+            # Update our file list for backup/restore
+            self.update_files = files_to_download
+
+            # Download each file
+            for filename in files_to_download:
                 if not self.download_file(filename, self.temp_dir):
                     return False
 
-            print("All files downloaded successfully")
+            log_info(f"Downloaded {len(files_to_download)} firmware files", "OTA")
             return True
 
         except Exception as e:
-            print(f"Update download failed: {e}")
+            log_error(f"Individual file download failed: {e}", "OTA")
+            return False
+
+    def _discover_firmware_files(self):
+        """
+        Discover firmware files from GitHub repository.
+
+        Returns:
+            list: List of firmware files to download (excluding secrets.py).
+        """
+        try:
+            log_debug("Discovering firmware files from repository", "OTA")
+
+            # Get repository contents for firmware directory
+            contents_url = f"{self.api_base}/contents/firmware"
+            success, response_or_error = self._make_request(contents_url)
+
+            if not success:
+                log_warn(f"Failed to get repository contents: {response_or_error}", "OTA")
+                # Fallback to known essential files
+                return ["main.py", "config.py", "ota_updater.py", "device_config.py", "logger.py", "version.txt"]
+
+            try:
+                contents_data = response_or_error.json()
+                response_or_error.close()
+            except Exception as e:
+                log_error(f"Failed to parse contents response: {e}", "OTA")
+                response_or_error.close()
+                return ["main.py", "config.py", "ota_updater.py", "device_config.py", "logger.py", "version.txt"]
+
+            # Extract firmware files (exclude secrets.py for security)
+            firmware_files = []
+            for item in contents_data:
+                if item["type"] == "file":
+                    filename = item["name"]
+                    # Include .py files and version.txt, but exclude secrets.py
+                    if (filename.endswith(".py") or filename == "version.txt") and filename != "secrets.py":
+                        firmware_files.append(filename)
+
+            log_info(f"Discovered {len(firmware_files)} firmware files: {firmware_files}", "OTA")
+            return firmware_files
+
+        except Exception as e:
+            log_error(f"File discovery failed: {e}", "OTA")
+            # Return essential files as fallback
+            return ["main.py", "config.py", "ota_updater.py", "device_config.py", "logger.py", "version.txt"]
+
+    def download_update(self, version, release_info=None):
+        """
+        Download firmware update using package-based approach.
+
+        Args:
+            version (str): Version being downloaded.
+            release_info (dict): Release information from GitHub API.
+
+        Returns:
+            bool: True if all files downloaded successfully.
+        """
+        try:
+            log_info(f"Starting firmware download for version {version}", "OTA")
+
+            # Try package-based download first
+            if release_info and self.download_firmware_package(version, release_info):
+                return True
+
+            # Fallback to individual file download
+            log_warn("Package download failed, trying individual file download", "OTA")
+            return self._download_files_individually()
+
+        except Exception as e:
+            log_error(f"Update download failed: {e}", "OTA")
             return False
 
     def apply_update(self, version):

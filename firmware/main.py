@@ -307,7 +307,7 @@ def perform_scheduled_update():
 
         # Update status: Downloading files
         log_info("Downloading update files...", "OTA")
-        download_success = ota_updater.download_update(new_version)
+        download_success = ota_updater.download_update(new_version, None)
 
         if not download_success:
             log_error("Download failed", "OTA")
