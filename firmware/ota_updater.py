@@ -11,6 +11,7 @@ import os
 import gc
 import machine  # type: ignore
 from config import OTA_CONFIG
+from logger import log_info, log_warn, log_error, log_debug
 
 
 class GitHubOTAUpdater:
@@ -23,6 +24,8 @@ class GitHubOTAUpdater:
 
     def __init__(self):
         """Initialize the OTA updater with dynamic configuration"""
+        log_info("Initializing OTA updater", "OTA")
+
         # Load dynamic configuration
         self._load_dynamic_config()
 
@@ -36,6 +39,8 @@ class GitHubOTAUpdater:
 
         # Ensure directories exist
         self._ensure_directories()
+
+        log_info(f"OTA updater ready: {self.repo_owner}/{self.repo_name} ({self.branch})", "OTA")
 
     def _load_dynamic_config(self):
         """Load configuration from device_config.py"""
@@ -65,28 +70,8 @@ class GitHubOTAUpdater:
         Get list of firmware files to update.
         Returns all .py files plus version.txt and secrets.py.example
         """
-        firmware_files = []
-
         # Standard firmware files that should always be updated
-        standard_files = ["main.py", "config.py", "ota_updater.py", "device_config.py", "version.txt", "secrets.py.example"]
-
-        # Try to get actual file list from local directory
-        try:
-            import os
-            for filename in os.listdir('.'):
-                if filename.endswith('.py') or filename in ['version.txt', 'secrets.py.example']:
-                    if filename not in firmware_files:
-                        firmware_files.append(filename)
-        except:
-            # Fallback to standard list
-            firmware_files = standard_files
-
-        # Ensure we have the essential files
-        for essential_file in standard_files:
-            if essential_file not in firmware_files:
-                firmware_files.append(essential_file)
-
-        return firmware_files
+        return ["main.py", "config.py", "ota_updater.py", "device_config.py", "logger.py", "version.txt", "secrets.py.example"]
 
     def _ensure_directories(self):
         """Create backup and temp directories if they don't exist"""
@@ -189,24 +174,27 @@ class GitHubOTAUpdater:
                    release_info (dict): Full release information from GitHub
         """
         try:
-            print("Checking for updates...")
+            log_info("Starting update check", "OTA")
+            current_version = self.get_current_version()
+            log_info(f"Current version: {current_version}", "OTA")
 
             # For dev branch, check all releases including prereleases
             if self.branch == "dev":
                 url = f"{self.api_base}/releases"
-                print(f"Checking dev releases from: {url}")
+                log_debug(f"Checking dev releases from: {url}", "OTA")
 
                 success, response_or_error = self._make_request(url)
 
                 if not success:
-                    print(f"API request failed: {response_or_error}")
+                    log_error(f"API request failed: {response_or_error}", "OTA")
                     return self._check_updates_fallback()
 
                 try:
                     releases_data = response_or_error.json()
                     response_or_error.close()
+                    log_debug(f"Found {len(releases_data)} releases", "OTA")
                 except Exception as e:
-                    print(f"Failed to parse JSON response: {e}")
+                    log_error(f"Failed to parse JSON response: {e}", "OTA")
                     response_or_error.close()
                     return self._check_updates_fallback()
 
@@ -218,47 +206,50 @@ class GitHubOTAUpdater:
                         break  # Releases are ordered by date, so first match is latest
 
                 if not latest_dev_release:
-                    print("No dev releases found")
+                    log_info("No dev releases found", "OTA")
                     return False, None, None
 
                 latest_version = latest_dev_release["tag_name"]
-                current_version = self.get_current_version()
-
-                print(f"Current version: {current_version}")
-                print(f"Latest dev version: {latest_version}")
+                log_info(f"Latest dev version: {latest_version}", "OTA")
 
                 has_update = latest_version != current_version
+                if has_update:
+                    log_info(f"Update available: {current_version} -> {latest_version}", "OTA")
+                else:
+                    log_info("No update needed - already on latest version", "OTA")
                 return has_update, latest_version, latest_dev_release
 
             else:
                 # For main branch, use latest stable release
                 url = f"{self.api_base}/releases/latest"
+                log_debug(f"Checking latest release from: {url}", "OTA")
 
                 success, response_or_error = self._make_request(url)
 
                 if not success:
-                    print(f"API request failed: {response_or_error}")
+                    log_error(f"API request failed: {response_or_error}", "OTA")
                     return self._check_updates_fallback()
 
                 try:
                     release_data = response_or_error.json()
                     response_or_error.close()
                 except Exception as e:
-                    print(f"Failed to parse JSON response: {e}")
+                    log_error(f"Failed to parse JSON response: {e}", "OTA")
                     response_or_error.close()
                     return self._check_updates_fallback()
 
                 latest_version = release_data["tag_name"]
-                current_version = self.get_current_version()
-
-                print(f"Current version: {current_version}")
-                print(f"Latest version: {latest_version}")
+                log_info(f"Latest stable version: {latest_version}", "OTA")
 
                 has_update = latest_version != current_version
+                if has_update:
+                    log_info(f"Update available: {current_version} -> {latest_version}", "OTA")
+                else:
+                    log_info("No update needed - already on latest version", "OTA")
                 return has_update, latest_version, release_data
 
         except Exception as e:
-            print(f"Update check failed: {e}")
+            log_error(f"Update check failed: {e}", "OTA")
             return self._check_updates_fallback()
 
     def _check_updates_fallback(self):

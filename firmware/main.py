@@ -31,6 +31,7 @@ from device_config import (
     validate_config_input,
     get_config_for_metrics,
 )
+from logger import log_info, log_warn, log_error, log_debug, get_logger
 
 # Record boot time using ticks for accurate uptime calculation
 boot_ticks = time.ticks_ms()
@@ -58,7 +59,7 @@ def connect_wifi():
     Returns:
         bool: True if connected successfully, False otherwise.
     """
-    print("Connecting to Wi-Fi...")
+    log_info("Connecting to Wi-Fi...", "NETWORK")
     wlan.connect(ssid, password)
 
     max_wait = 20  # Increased timeout
@@ -66,40 +67,40 @@ def connect_wifi():
         status = wlan.status()
 
         if status == 3:  # Connected
-            print("Connected, IP =", wlan.ifconfig()[0])
+            ip = wlan.ifconfig()[0]
+            log_info(f"WiFi connected, IP: {ip}", "NETWORK")
             return True
         elif status < 0:  # Error states (-1, -2, -3)
-            print(f"Connection failed with status {status}, retrying...")
+            log_warn(f"Connection failed with status {status}, retrying...", "NETWORK")
             wlan.disconnect()
             time.sleep(2)
             wlan.connect(ssid, password)
             max_wait = 20  # Reset timeout for retry
         else:
-            print(f"Connecting... (status: {status}, {max_wait}s remaining)")
+            log_debug(f"Connecting... (status: {status}, {max_wait}s remaining)", "NETWORK")
 
         max_wait -= 1
         time.sleep(1)
 
     # If we get here, connection failed
-    print("WiFi connection timeout")
+    log_error("WiFi connection timeout", "NETWORK")
     return False
 
 
 wlan = network.WLAN(network.STA_IF)
 wlan.active(True)
 
-# Optional: set static IP (adjust as needed)
-# wlan.ifconfig(('10.1.1.161','255.255.255.0','10.1.1.1','8.8.8.8'))
-
 # Connect with improved reliability
 if not connect_wifi():
-    print("Initial connection failed, trying once more...")
+    log_error("Initial connection failed, trying once more...", "NETWORK")
     time.sleep(5)
     if not connect_wifi():
+        log_error("Wi-Fi connection failed after retries", "NETWORK")
         raise RuntimeError("Wi-Fi connection failed after retries")
 
 # DHT22 Sensor Setup
 sensor = dht.DHT22(Pin(SENSOR_CONFIG["pin"]))
+log_info(f"DHT22 sensor initialized on pin {SENSOR_CONFIG['pin']}", "SENSOR")
 
 # OTA Updater Setup
 ota_updater = None
@@ -107,9 +108,9 @@ if OTA_CONFIG["enabled"]:
     try:
         from ota_updater import GitHubOTAUpdater
         ota_updater = GitHubOTAUpdater()
-        print("OTA updater initialized")
+        log_info("OTA updater initialized", "OTA")
     except Exception as e:
-        print(f"Failed to initialize OTA updater: {e}")
+        log_error(f"Failed to initialize OTA updater: {e}", "OTA")
 
 
 def read_dht22():
@@ -124,13 +125,13 @@ def read_dht22():
         sensor.measure()
         t = sensor.temperature()
         h = sensor.humidity()
+        log_debug(f"Sensor reading: {t}°C, {h}%", "SENSOR")
         return round(t, 2), round(h, 2)
     except Exception as e:
-        print("Sensor read failed:", e)
+        log_error(f"Sensor read failed: {e}", "SENSOR")
         return None, None
 
 
-# HTTP Server (Prometheus-style)
 def format_metrics(temperature, humidity):
     """
     Format temperature, humidity, and system health as Prometheus metrics with dynamic labels.
@@ -213,20 +214,22 @@ def handle_update_request_delayed():
         str: HTTP response for update request.
     """
     if not ota_updater:
+        log_warn("OTA update requested but OTA not enabled", "OTA")
         return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nOTA not enabled"
 
     try:
-        print("Manual update requested")
+        log_info("Manual update requested", "OTA")
 
         # Check if update is already scheduled
         if pending_update["scheduled"]:
-            # Redirect to status page if update already scheduled
+            log_info("Update already scheduled, redirecting to status", "OTA")
             return "HTTP/1.0 302 Found\r\nLocation: /update/status\r\n\r\n"
 
         # Check for available updates
         has_update, new_version, _ = ota_updater.check_for_updates()
 
         if not has_update:
+            log_info("No updates available", "OTA")
             return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nNo updates available\n\nCurrent version is up to date."
 
         # Get current version for display
@@ -238,7 +241,7 @@ def handle_update_request_delayed():
         pending_update["current_version"] = current_version
         pending_update["start_time"] = time.time() + 10
 
-        print(f"Update to {new_version} scheduled for {pending_update['start_time']}")
+        log_info(f"Update to {new_version} scheduled for 10 seconds", "OTA")
 
         # Return plain text response with redirect
         response_text = f"""Update Scheduled Successfully!
@@ -262,7 +265,7 @@ Visit /update/status to monitor initial progress.
         return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nRefresh: 3; url=/update/status\r\n\r\n{response_text}"
 
     except Exception as e:
-        print(f"Update request failed: {e}")
+        log_error(f"Update request failed: {e}", "OTA")
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate scheduling failed: {e}"
 
 
@@ -271,7 +274,7 @@ def perform_scheduled_update():
     Perform the scheduled OTA update with progress tracking.
     """
     try:
-        print(f"Starting scheduled update to version {pending_update['version']}")
+        log_info(f"Starting scheduled update to version {pending_update['version']}", "OTA")
 
         # Update status: Starting download
         pending_update["status"] = "downloading"
@@ -281,15 +284,17 @@ def perform_scheduled_update():
         # Check for updates again (quick check)
         has_update, new_version, _ = ota_updater.check_for_updates()
         if not has_update:
+            log_warn("No update available during scheduled update", "OTA")
             pending_update["scheduled"] = False
             pending_update["status"] = "idle"
             return
 
         # Update status: Downloading files
-        print("Downloading update files...")
+        log_info("Downloading update files...", "OTA")
         download_success = ota_updater.download_update(new_version)
 
         if not download_success:
+            log_error("Download failed", "OTA")
             pending_update["status"] = "failed"
             pending_update["message"] = "Download failed"
             pending_update["scheduled"] = False
@@ -299,7 +304,7 @@ def perform_scheduled_update():
         pending_update["status"] = "applying"
         pending_update["progress"] = 75
         pending_update["message"] = "Applying update and backing up files..."
-        print("Applying update...")
+        log_info("Applying update...", "OTA")
 
         # Small delay to allow status page to show this step
         time.sleep(1)
@@ -312,7 +317,7 @@ def perform_scheduled_update():
             pending_update["status"] = "restarting"
             pending_update["progress"] = 100
             pending_update["message"] = "Update complete, restarting device..."
-            print("Update completed successfully, device will restart in 2 seconds")
+            log_info("Update completed successfully, device will restart in 2 seconds", "OTA")
 
             # Brief delay to show final status
             time.sleep(2)
@@ -321,47 +326,16 @@ def perform_scheduled_update():
             import machine
             machine.reset()
         else:
+            log_error("Update application failed", "OTA")
             pending_update["status"] = "failed"
             pending_update["message"] = "Update application failed"
             pending_update["scheduled"] = False
-            print("Update failed")
 
     except Exception as e:
-        print(f"Scheduled update failed: {e}")
+        log_error(f"Scheduled update failed: {e}", "OTA")
         pending_update["status"] = "failed"
         pending_update["message"] = f"Update error: {str(e)}"
         pending_update["scheduled"] = False
-
-
-def handle_update_request():
-    """
-    Handle OTA update request (legacy function kept for compatibility).
-
-    Returns:
-        str: HTTP response for update request.
-    """
-    if not ota_updater:
-        return "HTTP/1.0 503 Service Unavailable\r\n\r\nOTA not enabled"
-
-    try:
-        print("Manual update requested")
-        has_update, new_version, _ = ota_updater.check_for_updates()
-
-        if not has_update:
-            return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nNo updates available"
-
-        print(f"Starting update to version {new_version}")
-        # Note: This will restart the device if successful
-        success = ota_updater.perform_update()
-
-        if success:
-            return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nUpdate completed, restarting..."
-        else:
-            return "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate failed"
-
-    except Exception as e:
-        print(f"Update request failed: {e}")
-        return "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate error"
 
 
 def handle_update_status():
@@ -455,29 +429,10 @@ Available Actions:
             return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{status_text_response}"
 
     except Exception as e:
+        log_error(f"Status error: {e}", "OTA")
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nStatus error: {e}"
 
 
-
-Sensor Status: {sensor_status}
-Temperature: {temp if temp is not None else "ERROR"}C
-Humidity: {hum if hum is not None else "ERROR"}%
-
-Network Status: {wifi_status}
-IP Address: {ip_address}
-
-OTA Status: {ota_status}
-Version: {ota_updater.get_current_version() if ota_updater else "unknown"}
-
-System Info:
-Uptime: {uptime_hours:02d}:{uptime_minutes:02d}
-Free Memory: {free_memory:,} bytes
-"""
-
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{health_info}"
-
-    except Exception as e:
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nHealth check failed: {e}"
 def handle_health_check():
     """
     Handle health check request.
@@ -535,6 +490,7 @@ Free Memory: {free_memory:,} bytes
         return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{health_info}"
 
     except Exception as e:
+        log_error(f"Health check failed: {e}", "SYSTEM")
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nHealth check failed: {e}"
 
 
@@ -620,6 +576,7 @@ def handle_config_page():
             <a href="/">← Back to Main Menu</a>
             <a href="/health">Health Check</a>
             <a href="/metrics">View Metrics</a>
+            <a href="/logs">System Logs</a>
             <a href="/update/status">OTA Status</a>
         </div>
 
@@ -711,6 +668,7 @@ def handle_config_page():
         return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html}"
 
     except Exception as e:
+        log_error(f"Configuration page error: {e}", "HTTP")
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nConfiguration page error: {e}"
 
 
@@ -774,7 +732,7 @@ def parse_form_data(request):
         return form_data
 
     except Exception as e:
-        print(f"Error parsing form data: {e}")
+        log_error(f"Error parsing form data: {e}", "HTTP")
         return {}
 
 
@@ -791,134 +749,25 @@ def handle_config_update(request):
     try:
         # Parse form data
         form_data = parse_form_data(request)
-        print(f"Received config update: {form_data}")
+        log_info(f"Config update received: {list(form_data.keys())}", "CONFIG")
 
         # Validate and process configuration
         config = validate_config_input(form_data)
 
         # Save configuration
         if save_device_config(config):
-            print(f"Configuration updated: {config['device']['location']}/{config['device']['name']}")
+            log_info(f"Configuration updated: {config['device']['location']}/{config['device']['name']}", "CONFIG")
             # Redirect back to config page to show updated values
             return "HTTP/1.0 302 Found\r\nLocation: /config\r\n\r\n"
         else:
+            log_error("Failed to save configuration", "CONFIG")
             return "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to save configuration"
 
     except Exception as e:
-        print(f"Configuration update failed: {e}")
+        log_error(f"Configuration update failed: {e}", "CONFIG")
         return f"HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nConfiguration update failed: {e}"
-===================
-
-Sensor Status: {sensor_status}
-Temperature: {temp if temp is not None else "ERROR"}C
-Humidity: {hum if hum is not None else "ERROR"}%
-
-Network Status: {wifi_status}
-IP Address: {ip_address}
-
-OTA Status: {ota_status}
-Version: {ota_updater.get_current_version() if ota_updater else "unknown"}
-
-System Info:
-Uptime: {uptime_hours:02d}:{uptime_minutes:02d}
-Free Memory: {free_memory:,} bytes
-"""
-
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{health_info}"
-
-    except Exception as e:
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nHealth check failed: {e}"
 
 
-addr = socket.getaddrinfo(SERVER_CONFIG["host"], SERVER_CONFIG["port"])[0][-1]
-s = socket.socket()
-s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind(addr)
-s.listen(1)
-
-print("Listening on http://%s%s" % (wlan.ifconfig()[0], METRICS_ENDPOINT))
-
-while True:
-    try:
-        # Check for pending scheduled updates
-        if pending_update["scheduled"] and time.time() >= pending_update["start_time"]:
-            perform_scheduled_update()
-            # Note: perform_scheduled_update() will restart the device if successful
-
-        cl, addr = s.accept()
-        print("Client connected from", addr)
-        request = cl.recv(1024)
-        request_line = request.decode().split("\r\n")[0]
-
-        # Extract the path from the request line for exact matching
-        try:
-            request_parts = request_line.split()
-            if len(request_parts) >= 2:
-                method = request_parts[0]
-                path = request_parts[1]
-            else:
-                method = ""
-                path = ""
-        except:
-            method = ""
-            path = ""
-
-        # Route requests to appropriate handlers using exact path matching
-        if method == "GET" and path == METRICS_ENDPOINT:
-            # Prometheus metrics endpoint
-            temp, hum = read_dht22()
-            if temp is not None:
-                response = format_metrics(temp, hum)
-                cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n")
-                cl.send(response)
-            else:
-                cl.send("HTTP/1.0 500 Internal Server Error\r\n\r\n")
-                cl.send("Sensor error")
-
-        elif method == "GET" and path == "/update/status":
-            # Update status endpoint - check this BEFORE /update
-            response = handle_update_status()
-            cl.send(response)
-
-        elif method == "GET" and path == "/update":
-            # OTA update endpoint with delayed execution
-            response = handle_update_request_delayed()
-            cl.send(response)
-
-        elif method == "GET" and path == "/health":
-            # Health check endpoint
-            response = handle_health_check()
-            cl.send(response)
-
-        elif method == "GET" and path == "/config":
-            # Configuration page endpoint
-            response = handle_config_page()
-            cl.send(response)
-
-        elif method == "POST" and path == "/config":
-            # Configuration update endpoint
-            response = handle_config_update(request)
-            cl.send(response)
-
-        elif method == "GET" and path == "/":
-            # Root endpoint - show available endpoints
-            endpoints_info = f"""Available endpoints:
-{METRICS_ENDPOINT} - Prometheus metrics
-/health - Health check
-/config - Device configuration
-/update/status - Update status
-/update - Trigger OTA update
-"""
-            cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n")
-            cl.send(endpoints_info)
-
-        else:
-            # 404 for unknown endpoints
-            cl.send("HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\n")
-            cl.send(f"Endpoint not found: {method} {path}")
-
-        cl.close()
-
-    except OSError as e:
-        print("Socket error:", e)
-        cl.close()
+def handle_logs_page(request):
+    """
+    Handle logs page request with filtering and web
