@@ -791,4 +791,324 @@ def handle_config_update(request):
 
 def handle_logs_page(request):
     """
-    Handle logs page request with filtering and web
+    Handle logs page request with filtering and web interface.
+
+    Args:
+        request (bytes): Raw HTTP request data
+
+    Returns:
+        str: HTTP response with logs interface
+    """
+    try:
+        # Parse query parameters for filtering
+        request_str = request.decode('utf-8')
+        query_params = {}
+
+        # Extract query string from request
+        if '?' in request_str:
+            query_string = request_str.split('?')[1].split(' ')[0]
+            for param in query_string.split('&'):
+                if '=' in param:
+                    key, value = param.split('=', 1)
+                    query_params[key] = value
+
+        # Get filter parameters
+        level_filter = query_params.get('level', 'ALL')
+        category_filter = query_params.get('category', 'ALL')
+        action = query_params.get('action', '')
+
+        # Handle clear logs action
+        if action == 'clear':
+            logger = get_logger()
+            logger.clear_logs()
+            log_info("Logs cleared via web interface", "SYSTEM")
+            # Redirect to remove action parameter
+            return "HTTP/1.0 302 Found\r\nLocation: /logs\r\n\r\n"
+
+        # Get logger and statistics
+        logger = get_logger()
+        stats = logger.get_statistics()
+
+        # Get filtered logs
+        logs = logger.get_logs(level_filter, category_filter, last_n=100)
+
+        # Format logs for display
+        log_lines = []
+        for log in logs:
+            timestamp_str = f"+{log['t']}s"
+            line = f"[{timestamp_str:>6}] {log['l']:5} {log['c']:7}: {log['m']}"
+            log_lines.append(line)
+
+        logs_text = "\n".join(log_lines) if log_lines else "No logs found matching criteria."
+
+        # Generate HTML interface
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>System Logs</title>
+    <style>
+        body {{ font-family: monospace; margin: 20px; background: #f9f9f9; }}
+        .container {{ max-width: 1200px; background: white; padding: 20px; border: 1px solid #ddd; }}
+        .controls {{ background: #e9ecef; padding: 15px; margin-bottom: 20px; border-left: 4px solid #007bff; }}
+        .controls select, .controls button {{ margin: 5px; padding: 8px; font-family: monospace; }}
+        .stats {{ background: #f8f9fa; padding: 10px; margin-bottom: 15px; border: 1px solid #dee2e6; }}
+        .logs {{ background: #000; color: #0f0; padding: 15px; font-family: 'Courier New', monospace; font-size: 12px; height: 500px; overflow-y: auto; white-space: pre-wrap; }}
+        .nav {{ margin-bottom: 20px; }}
+        .nav a {{ color: #007bff; text-decoration: none; margin-right: 20px; }}
+        .nav a:hover {{ text-decoration: underline; }}
+        button {{ background: #007bff; color: white; border: none; cursor: pointer; padding: 8px 16px; }}
+        button:hover {{ background: #0056b3; }}
+        button.danger {{ background: #dc3545; }}
+        button.danger:hover {{ background: #c82333; }}
+        .auto-refresh {{ margin-left: 10px; }}
+    </style>
+    <script>
+        function filterLogs() {{
+            var level = document.getElementById('level').value;
+            var category = document.getElementById('category').value;
+            var url = '/logs?level=' + level + '&category=' + category;
+            window.location.href = url;
+        }}
+
+        function clearLogs() {{
+            if (confirm('Are you sure you want to clear all logs?')) {{
+                window.location.href = '/logs?action=clear';
+            }}
+        }}
+
+        function refreshLogs() {{
+            window.location.reload();
+        }}
+
+        // Auto-refresh every 10 seconds if checkbox is checked
+        setInterval(function() {{
+            if (document.getElementById('autoRefresh').checked) {{
+                refreshLogs();
+            }}
+        }}, 10000);
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>System Logs</h1>
+
+        <div class="nav">
+            <a href="/">← Back to Main Menu</a>
+            <a href="/health">Health Check</a>
+            <a href="/config">Configuration</a>
+            <a href="/update/status">OTA Status</a>
+        </div>
+
+        <div class="stats">
+            <strong>Log Statistics:</strong>
+            Entries: {stats['total_entries']}/{stats['max_entries']} |
+            Memory: {stats['memory_usage_kb']}KB/{stats['max_memory_kb']}KB |
+            Uptime: {stats['uptime_seconds']}s |
+            Errors: {stats['logs_by_level']['ERROR']} |
+            Warnings: {stats['logs_by_level']['WARN']}
+        </div>
+
+        <div class="controls">
+            <label>Level:</label>
+            <select id="level" onchange="filterLogs()">
+                <option value="ALL" {"selected" if level_filter == "ALL" else ""}>ALL</option>
+                <option value="ERROR" {"selected" if level_filter == "ERROR" else ""}>ERROR</option>
+                <option value="WARN" {"selected" if level_filter == "WARN" else ""}>WARN</option>
+                <option value="INFO" {"selected" if level_filter == "INFO" else ""}>INFO</option>
+                <option value="DEBUG" {"selected" if level_filter == "DEBUG" else ""}>DEBUG</option>
+            </select>
+
+            <label>Category:</label>
+            <select id="category" onchange="filterLogs()">
+                <option value="ALL" {"selected" if category_filter == "ALL" else ""}>ALL</option>
+                <option value="SYSTEM" {"selected" if category_filter == "SYSTEM" else ""}>SYSTEM</option>
+                <option value="OTA" {"selected" if category_filter == "OTA" else ""}>OTA</option>
+                <option value="SENSOR" {"selected" if category_filter == "SENSOR" else ""}>SENSOR</option>
+                <option value="CONFIG" {"selected" if category_filter == "CONFIG" else ""}>CONFIG</option>
+                <option value="NETWORK" {"selected" if category_filter == "NETWORK" else ""}>NETWORK</option>
+                <option value="HTTP" {"selected" if category_filter == "HTTP" else ""}>HTTP</option>
+            </select>
+
+            <button onclick="refreshLogs()">Refresh</button>
+            <button class="danger" onclick="clearLogs()">Clear Logs</button>
+
+            <label class="auto-refresh">
+                <input type="checkbox" id="autoRefresh"> Auto-refresh (10s)
+            </label>
+        </div>
+
+        <div class="logs">{logs_text}</div>
+
+        <div style="margin-top: 15px; font-size: 12px; color: #666;">
+            Showing last 100 entries. Logs are stored in memory only and will be lost on restart.
+        </div>
+    </div>
+</body>
+</html>"""
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html}"
+
+    except Exception as e:
+        log_error(f"Logs page error: {e}", "HTTP")
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nLogs page error: {e}"
+
+
+# HTTP Server Setup and Request Handling
+def handle_request(cl, request):
+    """
+    Handle incoming HTTP requests with improved routing and error handling.
+
+    Args:
+        cl: Client socket connection.
+        request (bytes): Raw HTTP request data.
+    """
+    try:
+        # Parse request
+        request_str = request.decode('utf-8')
+        lines = request_str.split('\r\n')
+        if not lines:
+            cl.send("HTTP/1.0 400 Bad Request\r\n\r\n")
+            return
+
+        # Extract method and path
+        request_line = lines[0]
+        parts = request_line.split(' ')
+        if len(parts) < 2:
+            cl.send("HTTP/1.0 400 Bad Request\r\n\r\n")
+            return
+
+        method = parts[0]
+        path = parts[1]
+
+        # Remove query parameters from path for routing
+        if '?' in path:
+            path = path.split('?')[0]
+
+        log_debug(f"HTTP {method} {path}", "HTTP")
+
+        # Route requests
+        if method == "GET" and path == METRICS_ENDPOINT:
+            # Prometheus metrics endpoint
+            temp, hum = read_dht22()
+            if temp is not None and hum is not None:
+                metrics = format_metrics(temp, hum)
+                cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n")
+                cl.send(metrics)
+            else:
+                cl.send("HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nSensor unavailable")
+
+        elif method == "GET" and path == "/health":
+            # Health check endpoint
+            response = handle_health_check()
+            cl.send(response)
+
+        elif method == "GET" and path == "/config":
+            # Configuration page
+            response = handle_config_page()
+            cl.send(response)
+
+        elif method == "POST" and path == "/config":
+            # Configuration update
+            response = handle_config_update(request)
+            cl.send(response)
+
+        elif method == "GET" and path == "/logs":
+            # Logs page endpoint
+            response = handle_logs_page(request)
+            cl.send(response)
+
+        elif method == "GET" and path == "/update/status":
+            # Update status endpoint
+            response = handle_update_status()
+            cl.send(response)
+
+        elif method == "GET" and path == "/update":
+            # Manual update trigger
+            response = handle_update_request_delayed()
+            cl.send(response)
+
+        elif method == "GET" and path == "/":
+            # Root endpoint - show available endpoints
+            endpoints_info = f"""Available endpoints:
+{METRICS_ENDPOINT} - Prometheus metrics
+/health - Health check
+/config - Device configuration
+/logs - System logs and debugging
+/update/status - Update status
+/update - Trigger OTA update
+"""
+            cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n")
+            cl.send(endpoints_info)
+
+        else:
+            # 404 Not Found
+            cl.send("HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\nEndpoint not found")
+
+    except Exception as e:
+        log_error(f"Request handling error: {e}", "HTTP")
+        try:
+            cl.send("HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nInternal server error")
+        except:
+            pass  # Connection might be closed
+
+
+# Main server loop
+def run_server():
+    """
+    Run the main HTTP server loop with improved error handling and OTA integration.
+    """
+    addr = socket.getaddrinfo(SERVER_CONFIG["host"], SERVER_CONFIG["port"])[0][-1]
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(addr)
+    s.listen(1)
+
+    log_info(f"HTTP server listening on {SERVER_CONFIG['host']}:{SERVER_CONFIG['port']}", "SYSTEM")
+
+    while True:
+        try:
+            # Check for scheduled updates
+            if pending_update["scheduled"] and time.time() >= pending_update["start_time"]:
+                perform_scheduled_update()
+
+            # Accept connections with timeout
+            s.settimeout(1.0)  # 1 second timeout
+            try:
+                cl, addr = s.accept()
+                log_debug(f"Connection from {addr}", "HTTP")
+            except OSError:
+                continue  # Timeout, continue loop
+
+            # Handle request
+            try:
+                cl.settimeout(10.0)  # 10 second timeout for client operations
+                request = cl.recv(1024)
+                if request:
+                    handle_request(cl, request)
+            except Exception as e:
+                log_error(f"Client handling error: {e}", "HTTP")
+            finally:
+                try:
+                    cl.close()
+                except:
+                    pass
+
+        except KeyboardInterrupt:
+            log_info("Server shutdown requested", "SYSTEM")
+            break
+        except Exception as e:
+            log_error(f"Server error: {e}", "SYSTEM")
+            time.sleep(1)  # Brief pause before retrying
+
+    s.close()
+    log_info("HTTP server stopped", "SYSTEM")
+
+
+# Start the server
+if __name__ == "__main__":
+    try:
+        log_info("Starting Pico W Prometheus DHT22 sensor server", "SYSTEM")
+        run_server()
+    except Exception as e:
+        log_error(f"Fatal error: {e}", "SYSTEM")
+        raise
