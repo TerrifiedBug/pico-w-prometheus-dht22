@@ -95,7 +95,7 @@ def save_device_config(config):
         temp_file = 'device_config.json.tmp'
 
         with open(temp_file, 'w') as f:
-            json.dump(config, f, indent=2)
+            json.dump(config, f)
 
         # Atomic rename operation
         try:
