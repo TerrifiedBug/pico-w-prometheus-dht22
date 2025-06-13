@@ -20,7 +20,6 @@ from machine import Pin
 from config import (
     METRIC_NAMES,
     METRICS_ENDPOINT,
-    OTA_CONFIG,
     SENSOR_CONFIG,
     SERVER_CONFIG,
     WIFI_CONFIG,
@@ -120,13 +119,19 @@ log_info(f"DHT22 sensor initialized on pin {SENSOR_CONFIG['pin']}", "SENSOR")
 
 # OTA Updater Setup
 ota_updater = None
-if OTA_CONFIG["enabled"]:
-    try:
+try:
+    # Check if OTA is enabled via dynamic configuration
+    from device_config import get_ota_config
+    ota_config = get_ota_config()
+
+    if ota_config.get("enabled", True):
         from ota_updater import GitHubOTAUpdater
         ota_updater = GitHubOTAUpdater()
         log_info("OTA updater initialized", "OTA")
-    except Exception as e:
-        log_error(f"Failed to initialize OTA updater: {e}", "OTA")
+    else:
+        log_info("OTA updater disabled via configuration", "OTA")
+except Exception as e:
+    log_error(f"Failed to initialize OTA updater: {e}", "OTA")
 
 
 def read_dht22():

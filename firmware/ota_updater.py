@@ -10,7 +10,6 @@ import ujson  # type: ignore
 import os
 import gc
 import machine  # type: ignore
-from config import OTA_CONFIG
 from logger import log_info, log_warn, log_error, log_debug
 
 
@@ -57,13 +56,14 @@ class GitHubOTAUpdater:
             self.update_files = self._get_firmware_files()
 
         except Exception as e:
-            print(f"Failed to load dynamic config, using fallback: {e}")
-            # Fallback to static config
-            self.repo_owner = OTA_CONFIG["github_repo"]["owner"]
-            self.repo_name = OTA_CONFIG["github_repo"]["name"]
-            self.branch = OTA_CONFIG["github_repo"]["branch"]
-            self.backup_enabled = OTA_CONFIG["backup_enabled"]
-            self.update_files = ["main.py", "config.py", "ota_updater.py", "device_config.py", "version.txt"]
+            log_error(f"Failed to load dynamic config: {e}", "OTA")
+            # Use safe defaults if dynamic config fails
+            self.repo_owner = "TerrifiedBug"
+            self.repo_name = "pico-w-prometheus-dht22"
+            self.branch = "main"
+            self.backup_enabled = True
+            self.update_files = ["main.py", "config.py", "ota_updater.py", "device_config.py", "logger.py", "version.txt"]
+            log_warn("Using default OTA configuration", "OTA")
 
     def _get_firmware_files(self):
         """
@@ -684,10 +684,20 @@ class GitHubOTAUpdater:
         Returns:
             dict: Status information including current version, last check, etc.
         """
+        try:
+            from device_config import get_ota_config
+            ota_config = get_ota_config()
+            ota_enabled = ota_config.get("enabled", True)
+            auto_check = ota_config.get("auto_update", True)
+        except Exception:
+            # Fallback if dynamic config fails
+            ota_enabled = True
+            auto_check = True
+
         return {
             "current_version": self.get_current_version(),
-            "ota_enabled": OTA_CONFIG["enabled"],
-            "auto_check": OTA_CONFIG["auto_check"],
+            "ota_enabled": ota_enabled,
+            "auto_check": auto_check,
             "repo": f"{self.repo_owner}/{self.repo_name}",
             "branch": self.branch,
             "update_files": self.update_files
