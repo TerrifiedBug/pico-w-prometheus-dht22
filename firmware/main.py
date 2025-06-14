@@ -491,7 +491,7 @@ def handle_update_status():
 
             <div class="status-card status-info">
                 <h3>Version Info</h3>
-                <div class="metric-value">{current_version} → {target_version}</div>
+                <div class="metric-value">{current_version} > {target_version}</div>
                 <div>Repository: {status_info['repo']}</div>
             </div>
         </div>
