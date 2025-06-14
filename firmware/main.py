@@ -358,6 +358,48 @@ def perform_scheduled_update():
         pending_update["message"] = f"Update error: {str(e)}"
         pending_update["scheduled"] = False
 
+
+def get_shared_css():
+    """
+    Get shared CSS styles for consistent page design.
+
+    Returns:
+        str: CSS styles for all pages
+    """
+    return """
+        body { font-family: monospace; margin: 20px; background: #f9f9f9; }
+        .container { max-width: 1000px; background: white; padding: 20px; border: 1px solid #ddd; margin: 0 auto; }
+        .nav { margin-bottom: 20px; }
+        .nav a { color: #007bff; text-decoration: none; margin-right: 20px; }
+        .nav a:hover { text-decoration: underline; }
+        .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .status-card { background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 4px; }
+        .status-card h3 { margin: 0 0 10px 0; color: #495057; }
+        .status-ok { border-left: 4px solid #28a745; }
+        .status-warn { border-left: 4px solid #ffc107; }
+        .status-error { border-left: 4px solid #dc3545; }
+        .status-info { border-left: 4px solid #007bff; }
+        .metric-value { font-size: 1.2em; font-weight: bold; color: #007bff; }
+        .metric-unit { font-size: 0.9em; color: #6c757d; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; padding: 8px 16px; margin: 5px; }
+        button:hover { background: #0056b3; }
+        button.success { background: #28a745; }
+        button.success:hover { background: #1e7e34; }
+        button.warning { background: #ffc107; color: #212529; }
+        button.warning:hover { background: #e0a800; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        .progress-bar { background: #e9ecef; height: 20px; border-radius: 4px; overflow: hidden; margin: 10px 0; }
+        .progress-fill { background: #007bff; height: 100%; transition: width 0.3s ease; }
+        .info-section { background: #e9ecef; padding: 15px; margin: 15px 0; border-left: 4px solid #007bff; }
+        .endpoint-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0; }
+        .endpoint-card { background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; text-align: center; }
+        .endpoint-card a { color: #007bff; text-decoration: none; font-weight: bold; }
+        .endpoint-card a:hover { text-decoration: underline; }
+        .endpoint-desc { font-size: 0.9em; color: #6c757d; margin-top: 5px; }
+    """
+
+
 def handle_update_status():
     """
     Handle update status request with enhanced HTML interface.
@@ -483,6 +525,12 @@ def handle_update_status():
 
         else:
             # No pending update - show normal status
+            # Pre-calculate CSS classes and text for f-string compatibility
+            ota_status_class = "status-ok" if status_info['ota_enabled'] else "status-warn"
+            ota_enabled_text = "Enabled" if status_info['ota_enabled'] else "Disabled"
+            auto_update_class = "status-ok" if status_info['auto_check'] else "status-warn"
+            auto_update_text = "Enabled" if status_info['auto_check'] else "Disabled"
+
             html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -522,15 +570,15 @@ def handle_update_status():
                 <div>Installed firmware version</div>
             </div>
 
-            <div class="status-card {"status-ok" if status_info['ota_enabled'] else "status-warn"}">
+            <div class="status-card {ota_status_class}">
                 <h3>OTA Status</h3>
-                <div class="metric-value">{"Enabled" if status_info['ota_enabled'] else "Disabled"}</div>
+                <div class="metric-value">{ota_enabled_text}</div>
                 <div>Update system status</div>
             </div>
 
-            <div class="status-card {"status-ok" if status_info['auto_check'] else "status-warn"}">
+            <div class="status-card {auto_update_class}">
                 <h3>Auto Updates</h3>
-                <div class="metric-value">{"Enabled" if status_info['auto_check'] else "Disabled"}</div>
+                <div class="metric-value">{auto_update_text}</div>
                 <div>Automatic update checking</div>
             </div>
         </div>
@@ -565,55 +613,6 @@ def handle_update_status():
 </body>
 </html>"""
             return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html}"
-
-    except Exception as e:
-        log_error(f"Status error: {e}", "OTA")
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nStatus error: {e}"
-=================
-
-Status: {status_text}
-Time Remaining: {time_remaining if time_remaining > 0 else "ACTIVE"}s
-Progress: {progress_width}%
-
-Current Version: {current_version}
-Target Version: {target_version}
-Repository: {status_info['repo']}
-
-Update Process:
-[X] Update scheduled
-[{"X" if time_remaining <= 0 else "O"}] Waiting for start time
-[{"X" if update_status in ["downloading", "applying", "restarting"] else "O"}] Download update files
-[{"X" if update_status in ["applying", "restarting"] else "O"}] Apply update and backup
-[{"X" if update_status == "restarting" else "O"}] Device restart
-
-Current Step: {message}
-
-IMPORTANT: When device restarts, this page will timeout and stop responding.
-This is NORMAL behavior! Wait 60-90 seconds, then visit /health to verify update.
-"""
-            return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nRefresh: 2\r\n\r\n{status_text_response}"
-        else:
-            # No pending update - show normal status
-            status_text_response = f"""OTA System Status
-=================
-
-Status: READY - No pending updates
-
-Current Version: {current_version}
-OTA Enabled: {"Yes" if status_info['ota_enabled'] else "No"}
-Auto Check: {"Yes" if status_info['auto_check'] else "No"}
-Repository: {status_info['repo']}
-Branch: {status_info['branch']}
-Update Files: {', '.join(status_info['update_files'])}
-
-System ready for OTA updates.
-
-Available Actions:
-- Visit /update to check for updates
-- Visit /health for system health check
-- Visit / for main menu
-"""
-            return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{status_text_response}"
 
     except Exception as e:
         log_error(f"Status error: {e}", "OTA")
@@ -1083,46 +1082,6 @@ def handle_config_update(request):
         return f"HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nConfiguration update failed: {e}"
 
 
-def get_shared_css():
-    """
-    Get shared CSS styles for consistent page design.
-
-    Returns:
-        str: CSS styles for all pages
-    """
-    return """
-        body { font-family: monospace; margin: 20px; background: #f9f9f9; }
-        .container { max-width: 1000px; background: white; padding: 20px; border: 1px solid #ddd; margin: 0 auto; }
-        .nav { margin-bottom: 20px; }
-        .nav a { color: #007bff; text-decoration: none; margin-right: 20px; }
-        .nav a:hover { text-decoration: underline; }
-        .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
-        .status-card { background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 4px; }
-        .status-card h3 { margin: 0 0 10px 0; color: #495057; }
-        .status-ok { border-left: 4px solid #28a745; }
-        .status-warn { border-left: 4px solid #ffc107; }
-        .status-error { border-left: 4px solid #dc3545; }
-        .status-info { border-left: 4px solid #007bff; }
-        .metric-value { font-size: 1.2em; font-weight: bold; color: #007bff; }
-        .metric-unit { font-size: 0.9em; color: #6c757d; }
-        button { background: #007bff; color: white; border: none; cursor: pointer; padding: 8px 16px; margin: 5px; }
-        button:hover { background: #0056b3; }
-        button.success { background: #28a745; }
-        button.success:hover { background: #1e7e34; }
-        button.warning { background: #ffc107; color: #212529; }
-        button.warning:hover { background: #e0a800; }
-        button.danger { background: #dc3545; }
-        button.danger:hover { background: #c82333; }
-        .progress-bar { background: #e9ecef; height: 20px; border-radius: 4px; overflow: hidden; margin: 10px 0; }
-        .progress-fill { background: #007bff; height: 100%; transition: width 0.3s ease; }
-        .info-section { background: #e9ecef; padding: 15px; margin: 15px 0; border-left: 4px solid #007bff; }
-        .endpoint-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0; }
-        .endpoint-card { background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; text-align: center; }
-        .endpoint-card a { color: #007bff; text-decoration: none; font-weight: bold; }
-        .endpoint-card a:hover { text-decoration: underline; }
-        .endpoint-desc { font-size: 0.9em; color: #6c757d; margin-top: 5px; }
-    """
-
 def handle_root_page():
     """
     Handle root page request with dashboard interface.
@@ -1260,6 +1219,7 @@ def handle_root_page():
     except Exception as e:
         log_error(f"Root page error: {e}", "HTTP")
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nDashboard error: {e}"
+
 
 def handle_logs_page(request):
     """
