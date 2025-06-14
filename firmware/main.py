@@ -359,9 +359,56 @@ def perform_scheduled_update():
         pending_update["scheduled"] = False
 
 
+
+Status: {status_text}
+Time Remaining: {time_remaining if time_remaining > 0 else "ACTIVE"}s
+Progress: {progress_width}%
+
+Current Version: {current_version}
+Target Version: {target_version}
+Repository: {status_info['repo']}
+
+Update Process:
+[X] Update scheduled
+[{"X" if time_remaining <= 0 else "O"}] Waiting for start time
+[{"X" if update_status in ["downloading", "applying", "restarting"] else "O"}] Download update files
+[{"X" if update_status in ["applying", "restarting"] else "O"}] Apply update and backup
+[{"X" if update_status == "restarting" else "O"}] Device restart
+
+Current Step: {message}
+
+IMPORTANT: When device restarts, this page will timeout and stop responding.
+This is NORMAL behavior! Wait 60-90 seconds, then visit /health to verify update.
+"""
+            return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nRefresh: 2\r\n\r\n{status_text_response}"
+        else:
+            # No pending update - show normal status
+            status_text_response = f"""OTA System Status
+
+Status: READY - No pending updates
+
+Current Version: {current_version}
+OTA Enabled: {"Yes" if status_info['ota_enabled'] else "No"}
+Auto Check: {"Yes" if status_info['auto_check'] else "No"}
+Repository: {status_info['repo']}
+Branch: {status_info['branch']}
+Update Files: {', '.join(status_info['update_files'])}
+
+System ready for OTA updates.
+
+Available Actions:
+- Visit /update to check for updates
+- Visit /health for system health check
+- Visit / for main menu
+"""
+            return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{status_text_response}"
+
+    except Exception as e:
+        log_error(f"Status error: {e}", "OTA")
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nStatus error: {e}"
 def handle_update_status():
     """
-    Handle update status request with plain text interface.
+    Handle update status request with enhanced HTML interface.
 
     Returns:
         str: HTTP response with update status information.
@@ -384,25 +431,189 @@ def handle_update_status():
             # Determine status display based on current state
             if time_remaining > 0:
                 status_text = "WAITING FOR SCHEDULED TIME"
+                status_class = "status-warn"
                 progress_width = max(10, 100 - (time_remaining * 10))
             elif update_status == "downloading":
                 status_text = "DOWNLOADING UPDATE FILES"
+                status_class = "status-info"
                 progress_width = progress
             elif update_status == "applying":
                 status_text = "APPLYING UPDATE"
+                status_class = "status-info"
                 progress_width = progress
             elif update_status == "restarting":
                 status_text = "RESTARTING DEVICE"
+                status_class = "status-ok"
                 progress_width = 100
             elif update_status == "failed":
                 status_text = "UPDATE FAILED"
+                status_class = "status-error"
                 progress_width = 0
             else:
                 status_text = "UPDATE STARTING NOW!"
+                status_class = "status-info"
                 progress_width = 10
 
-            # Return plain text status
-            status_text_response = f"""OTA Update Status
+            # Generate HTML for active update
+            html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>OTA Update Status</title>
+    <style>{get_shared_css()}</style>
+    <script>
+        // Auto-refresh every 2 seconds during update
+        setInterval(function() {{
+            window.location.reload();
+        }}, 2000);
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>OTA Update in Progress</h1>
+
+        <div class="nav">
+            <a href="/">← Back to Dashboard</a>
+            <a href="/health">Health Check</a>
+            <a href="/logs">System Logs</a>
+        </div>
+
+        <div class="status-grid">
+            <div class="status-card {status_class}">
+                <h3>Update Status</h3>
+                <div class="metric-value">{status_text}</div>
+                <div>Time Remaining: {time_remaining if time_remaining > 0 else "ACTIVE"}s</div>
+            </div>
+
+            <div class="status-card status-info">
+                <h3>Progress</h3>
+                <div class="metric-value">{progress_width}%</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {progress_width}%"></div>
+                </div>
+            </div>
+
+            <div class="status-card status-info">
+                <h3>Version Info</h3>
+                <div class="metric-value">{current_version} → {target_version}</div>
+                <div>Repository: {status_info['repo']}</div>
+            </div>
+        </div>
+
+        <h2>Update Process</h2>
+        <div class="info-section">
+            <h3>Current Step: {message}</h3>
+            <div style="margin-top: 15px;">
+                <div>{"✓" if True else "○"} Update scheduled</div>
+                <div>{"✓" if time_remaining <= 0 else "○"} Waiting for start time</div>
+                <div>{"✓" if update_status in ["downloading", "applying", "restarting"] else "○"} Download update files</div>
+                <div>{"✓" if update_status in ["applying", "restarting"] else "○"} Apply update and backup</div>
+                <div>{"✓" if update_status == "restarting" else "○"} Device restart</div>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <h3>Important Information</h3>
+            <strong>When device restarts, this page will timeout and stop responding.</strong><br>
+            This is NORMAL behavior! Wait 60-90 seconds, then visit /health to verify update.<br><br>
+            <strong>Do not power off the device during update!</strong>
+        </div>
+
+        <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 0.9em;">
+            Page auto-refreshes every 2 seconds | Last updated: {time.time():.0f}
+        </div>
+    </div>
+</body>
+</html>"""
+            return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html}"
+
+        else:
+            # No pending update - show normal status
+            html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>OTA System Status</title>
+    <style>{get_shared_css()}</style>
+    <script>
+        function checkForUpdates() {{
+            window.location.href = '/update';
+        }}
+
+        function refreshStatus() {{
+            window.location.reload();
+        }}
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>OTA System Status</h1>
+
+        <div class="nav">
+            <a href="/">← Back to Dashboard</a>
+            <a href="/health">Health Check</a>
+            <a href="/config">Configuration</a>
+            <a href="/logs">System Logs</a>
+        </div>
+
+        <div class="status-grid">
+            <div class="status-card status-ok">
+                <h3>System Status</h3>
+                <div class="metric-value">READY</div>
+                <div>No pending updates</div>
+            </div>
+
+            <div class="status-card status-info">
+                <h3>Current Version</h3>
+                <div class="metric-value">{current_version}</div>
+                <div>Installed firmware version</div>
+            </div>
+
+            <div class="status-card {"status-ok" if status_info['ota_enabled'] else "status-warn"}">
+                <h3>OTA Status</h3>
+                <div class="metric-value">{"Enabled" if status_info['ota_enabled'] else "Disabled"}</div>
+                <div>Update system status</div>
+            </div>
+
+            <div class="status-card {"status-ok" if status_info['auto_check'] else "status-warn"}">
+                <h3>Auto Updates</h3>
+                <div class="metric-value">{"Enabled" if status_info['auto_check'] else "Disabled"}</div>
+                <div>Automatic update checking</div>
+            </div>
+        </div>
+
+        <h2>System Information</h2>
+        <div class="info-section">
+            <h3>Repository Configuration</h3>
+            <strong>Repository:</strong> {status_info['repo']}<br>
+            <strong>Branch:</strong> {status_info['branch']}<br>
+            <strong>Update Files:</strong> {', '.join(status_info['update_files']) if status_info['update_files'] else 'Auto-discovered'}
+        </div>
+
+        <div class="info-section">
+            <h3>Update Settings</h3>
+            <strong>OTA Enabled:</strong> {"Yes" if status_info['ota_enabled'] else "No"}<br>
+            <strong>Auto Check:</strong> {"Yes" if status_info['auto_check'] else "No"}<br>
+            <strong>Current Version:</strong> {current_version}
+        </div>
+
+        <h2>Available Actions</h2>
+        <div style="margin-top: 20px;">
+            <button onclick="checkForUpdates()" class="success">Check for Updates</button>
+            <button onclick="refreshStatus()">Refresh Status</button>
+            <a href="/health"><button class="info">System Health</button></a>
+            <a href="/config"><button class="warning">OTA Settings</button></a>
+        </div>
+
+        <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 0.9em;">
+            System ready for OTA updates | Last checked: {time.time():.0f}
+        </div>
+    </div>
+</body>
+</html>"""
+            return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html}"
+
+    except Exception as e:
+        log_error(f"Status error: {e}", "OTA")
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nStatus error: {e}"
 =================
 
 Status: {status_text}
@@ -537,7 +748,7 @@ def handle_health_check():
 </head>
 <body>
     <div class="container">
-        <h1>🏥 System Health Check</h1>
+        <h1>System Health Check</h1>
 
         <div class="nav">
             <a href="/">← Back to Dashboard</a>
@@ -552,47 +763,47 @@ def handle_health_check():
 
         <div class="status-grid">
             <div class="status-card {overall_class}">
-                <h3>🎯 Overall Health</h3>
+                <h3>Overall Health</h3>
                 <div class="metric-value">{overall_health}</div>
                 <div>System status summary</div>
             </div>
 
             <div class="status-card {sensor_class}">
-                <h3>🌡️ DHT22 Sensor</h3>
+                <h3>DHT22 Sensor</h3>
                 <div class="metric-value">{sensor_status}</div>
-                {"<div>" + str(temp) + "°C | " + str(hum) + "%</div>" if temp is not None else "<div>❌ Sensor Error</div>"}
+                {"<div>" + str(temp) + "C | " + str(hum) + "%</div>" if temp is not None else "<div>Sensor Error</div>"}
             </div>
 
             <div class="status-card {wifi_class}">
-                <h3>📡 Network</h3>
+                <h3>Network</h3>
                 <div class="metric-value">{wifi_status}</div>
                 <div>IP: {ip_address}</div>
             </div>
 
             <div class="status-card {ota_class}">
-                <h3>🔄 OTA System</h3>
+                <h3>OTA System</h3>
                 <div class="metric-value">{ota_status}</div>
                 <div>Update system ready</div>
             </div>
 
             <div class="status-card status-info">
-                <h3>⏱️ Uptime</h3>
+                <h3>Uptime</h3>
                 <div class="metric-value">{uptime_days}d {uptime_hours:02d}:{uptime_minutes:02d}</div>
                 <div>Days:Hours:Minutes</div>
             </div>
 
             <div class="status-card {memory_class}">
-                <h3>💾 Memory</h3>
+                <h3>Memory</h3>
                 <div class="metric-value">{memory_mb}KB</div>
                 <div>Free memory available</div>
             </div>
         </div>
 
-        <h2>📊 Detailed Diagnostics</h2>
+        <h2>Detailed Diagnostics</h2>
 
         <div class="info-section">
             <h3>Sensor Readings</h3>
-            <strong>Temperature:</strong> {temp if temp is not None else "ERROR"}°C<br>
+            <strong>Temperature:</strong> {temp if temp is not None else "ERROR"}C<br>
             <strong>Humidity:</strong> {hum if hum is not None else "ERROR"}%<br>
             <strong>Sensor Pin:</strong> GPIO {SENSOR_CONFIG['pin']}<br>
             <strong>Read Interval:</strong> {SENSOR_CONFIG['read_interval']}s
@@ -623,10 +834,10 @@ def handle_health_check():
         </div>
 
         <div style="margin-top: 20px;">
-            <button onclick="refreshHealth()">🔄 Refresh Health Check</button>
-            <button onclick="runSensorTest()" class="success">🧪 Test Sensor</button>
-            <a href="/logs"><button class="warning">📋 View Logs</button></a>
-            <a href="/update/status"><button class="info">⬆️ Check Updates</button></a>
+            <button onclick="refreshHealth()">Refresh Health Check</button>
+            <button onclick="runSensorTest()" class="success">Test Sensor</button>
+            <a href="/logs"><button class="warning">View Logs</button></a>
+            <a href="/update/status"><button class="info">Check Updates</button></a>
         </div>
 
         <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 0.9em;">
@@ -1017,7 +1228,7 @@ def handle_root_page():
 </head>
 <body>
     <div class="container">
-        <h1>🌡️ Pico W Sensor Dashboard</h1>
+        <h1>Pico W Sensor Dashboard</h1>
 
         <div class="info-section">
             <strong>Device:</strong> {device_name} | <strong>Location:</strong> {location} | <strong>Version:</strong> {version}
@@ -1025,59 +1236,59 @@ def handle_root_page():
 
         <div class="status-grid">
             <div class="status-card {sensor_class}">
-                <h3>📊 Sensor Status</h3>
+                <h3>Sensor Status</h3>
                 <div class="metric-value">{sensor_status}</div>
-                {"<div>🌡️ " + str(temp) + "°C | 💧 " + str(hum) + "%" + "</div>" if temp is not None else "<div>❌ Sensor Error</div>"}
+                {"<div>" + str(temp) + "C | " + str(hum) + "%</div>" if temp is not None else "<div>Sensor Error</div>"}
             </div>
 
             <div class="status-card {wifi_class}">
-                <h3>📡 Network</h3>
+                <h3>Network</h3>
                 <div class="metric-value">{wifi_status}</div>
                 <div>IP: {ip_address}</div>
             </div>
 
             <div class="status-card {ota_class}">
-                <h3>🔄 OTA Updates</h3>
+                <h3>OTA Updates</h3>
                 <div class="metric-value">{ota_status}</div>
                 <div>Auto-update ready</div>
             </div>
 
             <div class="status-card status-info">
-                <h3>⏱️ System</h3>
+                <h3>System</h3>
                 <div class="metric-value">{uptime_hours:02d}:{uptime_minutes:02d}</div>
-                <div>💾 {memory_mb}KB free</div>
+                <div>{memory_mb}KB free</div>
             </div>
         </div>
 
-        <h2>🔗 Available Services</h2>
+        <h2>Available Services</h2>
         <div class="endpoint-grid">
             <div class="endpoint-card">
-                <a href="/health">🏥 Health Check</a>
+                <a href="/health">Health Check</a>
                 <div class="endpoint-desc">System status and diagnostics</div>
             </div>
 
             <div class="endpoint-card">
-                <a href="/config">⚙️ Configuration</a>
+                <a href="/config">Configuration</a>
                 <div class="endpoint-desc">Device and OTA settings</div>
             </div>
 
             <div class="endpoint-card">
-                <a href="/logs">📋 System Logs</a>
+                <a href="/logs">System Logs</a>
                 <div class="endpoint-desc">Debug logs and monitoring</div>
             </div>
 
             <div class="endpoint-card">
-                <a href="/update/status">🔄 OTA Status</a>
+                <a href="/update/status">OTA Status</a>
                 <div class="endpoint-desc">Update progress and control</div>
             </div>
 
             <div class="endpoint-card">
-                <a href="/metrics">📈 Metrics</a>
+                <a href="/metrics">Metrics</a>
                 <div class="endpoint-desc">Prometheus metrics endpoint</div>
             </div>
 
             <div class="endpoint-card">
-                <a href="/update">⬆️ Update Now</a>
+                <a href="/update">Update Now</a>
                 <div class="endpoint-desc">Trigger manual update</div>
             </div>
         </div>
