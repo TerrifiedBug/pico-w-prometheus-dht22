@@ -456,7 +456,7 @@ Available Actions:
 
 def handle_health_check():
     """
-    Handle health check request.
+    Handle health check request with enhanced HTML interface.
 
     Returns:
         str: HTTP response for health check.
@@ -465,50 +465,178 @@ def handle_health_check():
         # Test sensor reading
         temp, hum = read_dht22()
         sensor_status = "OK" if temp is not None else "FAIL"
+        sensor_class = "status-ok" if temp is not None else "status-error"
 
         # Check OTA status
-        ota_status = "OK" if ota_updater else "DISABLED"
+        ota_status = "Enabled" if ota_updater else "Disabled"
+        ota_class = "status-ok" if ota_updater else "status-warn"
 
         # Get system information with proper tick wraparound handling
         uptime_ms = time.ticks_diff(time.ticks_ms(), boot_ticks)
 
         # Handle potential negative values from tick wraparound
         if uptime_ms < 0:
-            # If negative, likely due to tick counter wraparound (every ~12.4 days)
-            # Calculate using the wraparound period (2^30 ms for MicroPython)
             uptime_ms = uptime_ms + (1 << 30)
 
-        uptime_seconds = max(0, uptime_ms // 1000)  # Ensure non-negative
+        uptime_seconds = max(0, uptime_ms // 1000)
         uptime_hours = uptime_seconds // 3600
         uptime_minutes = (uptime_seconds % 3600) // 60
+        uptime_days = uptime_hours // 24
+        uptime_hours = uptime_hours % 24
 
         # WiFi information
         wifi_status = "Connected" if wlan.isconnected() else "Disconnected"
+        wifi_class = "status-ok" if wlan.isconnected() else "status-error"
         ip_address = wlan.ifconfig()[0] if wlan.isconnected() else "N/A"
 
         # Memory information
         import gc
         gc.collect()
         free_memory = gc.mem_free()
+        memory_mb = round(free_memory / 1024, 1)
 
-        health_info = f"""System Health Check
+        # Memory status based on available memory
+        memory_class = "status-ok" if free_memory > 100000 else "status-warn" if free_memory > 50000 else "status-error"
 
-Sensor Status: {sensor_status}
-Temperature: {temp if temp is not None else "ERROR"}C
-Humidity: {hum if hum is not None else "ERROR"}%
+        # Version and device info
+        version = ota_updater.get_current_version() if ota_updater else "unknown"
+        config = get_config_for_metrics()
+        location = config["location"]
+        device_name = config["device"]
 
-Network Status: {wifi_status}
-IP Address: {ip_address}
+        # Overall system health
+        overall_health = "HEALTHY"
+        overall_class = "status-ok"
 
-OTA Status: {ota_status}
-Version: {ota_updater.get_current_version() if ota_updater else "unknown"}
+        if temp is None or not wlan.isconnected():
+            overall_health = "DEGRADED"
+            overall_class = "status-warn"
 
-System Info:
-Uptime: {uptime_hours:02d}:{uptime_minutes:02d}
-Free Memory: {free_memory:,} bytes
-"""
+        if free_memory < 50000:
+            overall_health = "CRITICAL"
+            overall_class = "status-error"
 
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{health_info}"
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>System Health Check</title>
+    <style>{get_shared_css()}</style>
+    <script>
+        function refreshHealth() {{
+            window.location.reload();
+        }}
+
+        function runSensorTest() {{
+            // Simple sensor test - just refresh to get new reading
+            refreshHealth();
+        }}
+
+        // Auto-refresh every 15 seconds
+        setInterval(refreshHealth, 15000);
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>🏥 System Health Check</h1>
+
+        <div class="nav">
+            <a href="/">← Back to Dashboard</a>
+            <a href="/config">Configuration</a>
+            <a href="/logs">System Logs</a>
+            <a href="/update/status">OTA Status</a>
+        </div>
+
+        <div class="info-section">
+            <strong>Device:</strong> {device_name} | <strong>Location:</strong> {location} | <strong>Version:</strong> {version}
+        </div>
+
+        <div class="status-grid">
+            <div class="status-card {overall_class}">
+                <h3>🎯 Overall Health</h3>
+                <div class="metric-value">{overall_health}</div>
+                <div>System status summary</div>
+            </div>
+
+            <div class="status-card {sensor_class}">
+                <h3>🌡️ DHT22 Sensor</h3>
+                <div class="metric-value">{sensor_status}</div>
+                {"<div>" + str(temp) + "°C | " + str(hum) + "%</div>" if temp is not None else "<div>❌ Sensor Error</div>"}
+            </div>
+
+            <div class="status-card {wifi_class}">
+                <h3>📡 Network</h3>
+                <div class="metric-value">{wifi_status}</div>
+                <div>IP: {ip_address}</div>
+            </div>
+
+            <div class="status-card {ota_class}">
+                <h3>🔄 OTA System</h3>
+                <div class="metric-value">{ota_status}</div>
+                <div>Update system ready</div>
+            </div>
+
+            <div class="status-card status-info">
+                <h3>⏱️ Uptime</h3>
+                <div class="metric-value">{uptime_days}d {uptime_hours:02d}:{uptime_minutes:02d}</div>
+                <div>Days:Hours:Minutes</div>
+            </div>
+
+            <div class="status-card {memory_class}">
+                <h3>💾 Memory</h3>
+                <div class="metric-value">{memory_mb}KB</div>
+                <div>Free memory available</div>
+            </div>
+        </div>
+
+        <h2>📊 Detailed Diagnostics</h2>
+
+        <div class="info-section">
+            <h3>Sensor Readings</h3>
+            <strong>Temperature:</strong> {temp if temp is not None else "ERROR"}°C<br>
+            <strong>Humidity:</strong> {hum if hum is not None else "ERROR"}%<br>
+            <strong>Sensor Pin:</strong> GPIO {SENSOR_CONFIG['pin']}<br>
+            <strong>Read Interval:</strong> {SENSOR_CONFIG['read_interval']}s
+        </div>
+
+        <div class="info-section">
+            <h3>Network Information</h3>
+            <strong>WiFi Status:</strong> {wifi_status}<br>
+            <strong>IP Address:</strong> {ip_address}<br>
+            <strong>Country Code:</strong> {WIFI_CONFIG['country_code']}<br>
+            <strong>SSID:</strong> {ssid if wlan.isconnected() else "Not connected"}
+        </div>
+
+        <div class="info-section">
+            <h3>System Resources</h3>
+            <strong>Free Memory:</strong> {free_memory:,} bytes ({memory_mb}KB)<br>
+            <strong>Uptime:</strong> {uptime_days} days, {uptime_hours} hours, {uptime_minutes} minutes<br>
+            <strong>Boot Time:</strong> {boot_ticks}ms (ticks)<br>
+            <strong>Server Port:</strong> {SERVER_CONFIG['port']}
+        </div>
+
+        <div class="info-section">
+            <h3>Firmware Information</h3>
+            <strong>Version:</strong> {version}<br>
+            <strong>OTA Status:</strong> {ota_status}<br>
+            <strong>Metrics Endpoint:</strong> {METRICS_ENDPOINT}<br>
+            <strong>Device Config:</strong> {location}/{device_name}
+        </div>
+
+        <div style="margin-top: 20px;">
+            <button onclick="refreshHealth()">🔄 Refresh Health Check</button>
+            <button onclick="runSensorTest()" class="success">🧪 Test Sensor</button>
+            <a href="/logs"><button class="warning">📋 View Logs</button></a>
+            <a href="/update/status"><button class="info">⬆️ Check Updates</button></a>
+        </div>
+
+        <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 0.9em;">
+            Health check auto-refreshes every 15 seconds | Last check: {time.time():.0f}
+        </div>
+    </div>
+</body>
+</html>"""
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html}"
 
     except Exception as e:
         log_error(f"Health check failed: {e}", "SYSTEM")
@@ -789,6 +917,184 @@ def handle_config_update(request):
         return f"HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nConfiguration update failed: {e}"
 
 
+def get_shared_css():
+    """
+    Get shared CSS styles for consistent page design.
+
+    Returns:
+        str: CSS styles for all pages
+    """
+    return """
+        body { font-family: monospace; margin: 20px; background: #f9f9f9; }
+        .container { max-width: 1000px; background: white; padding: 20px; border: 1px solid #ddd; margin: 0 auto; }
+        .nav { margin-bottom: 20px; }
+        .nav a { color: #007bff; text-decoration: none; margin-right: 20px; }
+        .nav a:hover { text-decoration: underline; }
+        .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .status-card { background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 4px; }
+        .status-card h3 { margin: 0 0 10px 0; color: #495057; }
+        .status-ok { border-left: 4px solid #28a745; }
+        .status-warn { border-left: 4px solid #ffc107; }
+        .status-error { border-left: 4px solid #dc3545; }
+        .status-info { border-left: 4px solid #007bff; }
+        .metric-value { font-size: 1.2em; font-weight: bold; color: #007bff; }
+        .metric-unit { font-size: 0.9em; color: #6c757d; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; padding: 8px 16px; margin: 5px; }
+        button:hover { background: #0056b3; }
+        button.success { background: #28a745; }
+        button.success:hover { background: #1e7e34; }
+        button.warning { background: #ffc107; color: #212529; }
+        button.warning:hover { background: #e0a800; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        .progress-bar { background: #e9ecef; height: 20px; border-radius: 4px; overflow: hidden; margin: 10px 0; }
+        .progress-fill { background: #007bff; height: 100%; transition: width 0.3s ease; }
+        .info-section { background: #e9ecef; padding: 15px; margin: 15px 0; border-left: 4px solid #007bff; }
+        .endpoint-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0; }
+        .endpoint-card { background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; text-align: center; }
+        .endpoint-card a { color: #007bff; text-decoration: none; font-weight: bold; }
+        .endpoint-card a:hover { text-decoration: underline; }
+        .endpoint-desc { font-size: 0.9em; color: #6c757d; margin-top: 5px; }
+    """
+
+def handle_root_page():
+    """
+    Handle root page request with dashboard interface.
+
+    Returns:
+        str: HTTP response with dashboard
+    """
+    try:
+        # Get system status
+        temp, hum = read_dht22()
+        sensor_status = "OK" if temp is not None else "FAIL"
+        sensor_class = "status-ok" if temp is not None else "status-error"
+
+        # Network status
+        wifi_status = "Connected" if wlan.isconnected() else "Disconnected"
+        wifi_class = "status-ok" if wlan.isconnected() else "status-error"
+        ip_address = wlan.ifconfig()[0] if wlan.isconnected() else "N/A"
+
+        # OTA status
+        ota_status = "Enabled" if ota_updater else "Disabled"
+        ota_class = "status-ok" if ota_updater else "status-warn"
+
+        # System info
+        uptime_ms = time.ticks_diff(time.ticks_ms(), boot_ticks)
+        if uptime_ms < 0:
+            uptime_ms = uptime_ms + (1 << 30)
+        uptime_seconds = max(0, uptime_ms // 1000)
+        uptime_hours = uptime_seconds // 3600
+        uptime_minutes = (uptime_seconds % 3600) // 60
+
+        # Memory info
+        import gc
+        gc.collect()
+        free_memory = gc.mem_free()
+        memory_mb = round(free_memory / 1024, 1)
+
+        # Version info
+        version = ota_updater.get_current_version() if ota_updater else "unknown"
+
+        # Device config
+        config = get_config_for_metrics()
+        location = config["location"]
+        device_name = config["device"]
+
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Pico W Sensor Dashboard</title>
+    <style>{get_shared_css()}</style>
+    <script>
+        function refreshPage() {{
+            window.location.reload();
+        }}
+
+        // Auto-refresh every 30 seconds
+        setInterval(refreshPage, 30000);
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>🌡️ Pico W Sensor Dashboard</h1>
+
+        <div class="info-section">
+            <strong>Device:</strong> {device_name} | <strong>Location:</strong> {location} | <strong>Version:</strong> {version}
+        </div>
+
+        <div class="status-grid">
+            <div class="status-card {sensor_class}">
+                <h3>📊 Sensor Status</h3>
+                <div class="metric-value">{sensor_status}</div>
+                {"<div>🌡️ " + str(temp) + "°C | 💧 " + str(hum) + "%" + "</div>" if temp is not None else "<div>❌ Sensor Error</div>"}
+            </div>
+
+            <div class="status-card {wifi_class}">
+                <h3>📡 Network</h3>
+                <div class="metric-value">{wifi_status}</div>
+                <div>IP: {ip_address}</div>
+            </div>
+
+            <div class="status-card {ota_class}">
+                <h3>🔄 OTA Updates</h3>
+                <div class="metric-value">{ota_status}</div>
+                <div>Auto-update ready</div>
+            </div>
+
+            <div class="status-card status-info">
+                <h3>⏱️ System</h3>
+                <div class="metric-value">{uptime_hours:02d}:{uptime_minutes:02d}</div>
+                <div>💾 {memory_mb}KB free</div>
+            </div>
+        </div>
+
+        <h2>🔗 Available Services</h2>
+        <div class="endpoint-grid">
+            <div class="endpoint-card">
+                <a href="/health">🏥 Health Check</a>
+                <div class="endpoint-desc">System status and diagnostics</div>
+            </div>
+
+            <div class="endpoint-card">
+                <a href="/config">⚙️ Configuration</a>
+                <div class="endpoint-desc">Device and OTA settings</div>
+            </div>
+
+            <div class="endpoint-card">
+                <a href="/logs">📋 System Logs</a>
+                <div class="endpoint-desc">Debug logs and monitoring</div>
+            </div>
+
+            <div class="endpoint-card">
+                <a href="/update/status">🔄 OTA Status</a>
+                <div class="endpoint-desc">Update progress and control</div>
+            </div>
+
+            <div class="endpoint-card">
+                <a href="/metrics">📈 Metrics</a>
+                <div class="endpoint-desc">Prometheus metrics endpoint</div>
+            </div>
+
+            <div class="endpoint-card">
+                <a href="/update">⬆️ Update Now</a>
+                <div class="endpoint-desc">Trigger manual update</div>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 0.9em;">
+            Page auto-refreshes every 30 seconds | Last updated: {time.time():.0f}
+        </div>
+    </div>
+</body>
+</html>"""
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html}"
+
+    except Exception as e:
+        log_error(f"Root page error: {e}", "HTTP")
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nDashboard error: {e}"
+
 def handle_logs_page(request):
     """
     Handle logs page request with filtering and web interface.
@@ -1028,17 +1334,9 @@ def handle_request(cl, request):
             cl.send(response)
 
         elif method == "GET" and path == "/":
-            # Root endpoint - show available endpoints
-            endpoints_info = f"""Available endpoints:
-{METRICS_ENDPOINT} - Prometheus metrics
-/health - Health check
-/config - Device configuration
-/logs - System logs and debugging
-/update/status - Update status
-/update - Trigger OTA update
-"""
-            cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n")
-            cl.send(endpoints_info)
+            # Root endpoint - dashboard interface
+            response = handle_root_page()
+            cl.send(response)
 
         else:
             # 404 Not Found

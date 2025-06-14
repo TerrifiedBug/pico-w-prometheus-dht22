@@ -6,8 +6,4 @@ scrape_configs:
   - job_name: "pico_sensors"
     static_configs:
       - targets: ["ip:80"]
-        labels:
-          location: office
       - targets: ["ip:80"]
-        labels:
-          location: bedroom
