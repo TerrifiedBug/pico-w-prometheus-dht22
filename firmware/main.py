@@ -454,6 +454,9 @@ def handle_update_status():
                 status_class = "status-info"
                 progress_width = 10
 
+            # Calculate time display for f-string compatibility
+            time_display = str(time_remaining) + "s" if time_remaining > 0 else "ACTIVE"
+
             # Generate HTML for active update
             html = f"""<!DOCTYPE html>
 <html>
@@ -481,7 +484,7 @@ def handle_update_status():
             <div class="status-card {status_class}">
                 <h3>Update Status</h3>
                 <div class="metric-value">{status_text}</div>
-                <div>Time Remaining: {time_remaining if time_remaining > 0 else "ACTIVE"}s</div>
+                <div>Time Remaining: {time_display}</div>
             </div>
 
             <div class="status-card status-info">
