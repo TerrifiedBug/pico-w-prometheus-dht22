@@ -469,7 +469,7 @@ def handle_update_status():
         <h1>OTA Update in Progress</h1>
 
         <div class="nav">
-            <a href="/">← Back to Dashboard</a>
+            <a href="/">Back to Dashboard</a>
             <a href="/health">Health Check</a>
             <a href="/logs">System Logs</a>
         </div>
@@ -551,7 +551,7 @@ def handle_update_status():
         <h1>OTA System Status</h1>
 
         <div class="nav">
-            <a href="/">← Back to Dashboard</a>
+            <a href="/">Back to Dashboard</a>
             <a href="/health">Health Check</a>
             <a href="/config">Configuration</a>
             <a href="/logs">System Logs</a>
@@ -705,7 +705,7 @@ def handle_health_check():
         <h1>System Health Check</h1>
 
         <div class="nav">
-            <a href="/">← Back to Dashboard</a>
+            <a href="/">Back to Dashboard</a>
             <a href="/config">Configuration</a>
             <a href="/logs">System Logs</a>
             <a href="/update/status">OTA Status</a>
