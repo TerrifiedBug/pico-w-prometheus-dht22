@@ -152,7 +152,7 @@ def read_dht22():
         sensor.measure()
         t = sensor.temperature()
         h = sensor.humidity()
-        log_debug(f"Sensor reading: {t}°C, {h}%", "SENSOR")
+        # Removed verbose sensor reading logs to save log space
         return round(t, 2), round(h, 2)
     except Exception as e:
         log_error(f"Sensor read failed: {e}", "SENSOR")
@@ -445,7 +445,7 @@ def handle_request(cl, request):
         if '?' in path:
             path = path.split('?')[0]
 
-        log_debug(f"HTTP {method} {path}", "HTTP")
+        # Removed verbose HTTP request logs to save log space
 
         # Route requests
         if method == "GET" and path == METRICS_ENDPOINT:
@@ -532,7 +532,7 @@ def run_server():
             s.settimeout(1.0)  # 1 second timeout
             try:
                 cl, addr = s.accept()
-                log_debug(f"Connection from {addr}", "HTTP")
+                # Removed verbose connection logs to save log space
             except OSError:
                 continue  # Timeout, continue loop
 
