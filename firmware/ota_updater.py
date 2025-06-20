@@ -397,7 +397,8 @@ class GitHubOTAUpdater:
 
     def _download_file_streaming(self, url, filename, target_dir=""):
         """
-        Download a file using streaming to handle large files with limited memory.
+        Download a file using ultra-minimal streaming to handle memory constraints.
+        Uses aggressive memory management and tiny chunks.
 
         Args:
             url (str): URL to download from
@@ -408,6 +409,11 @@ class GitHubOTAUpdater:
             bool: True if download successful, False otherwise
         """
         try:
+            # Force aggressive garbage collection before starting
+            gc.collect()
+            initial_mem = gc.mem_free()
+            log_debug(f"Starting ultra-minimal streaming download, initial memory: {initial_mem}", "OTA")
+
             # Use improved request method with proper headers and retries
             success, response_or_error = self._make_request(url)
 
@@ -419,47 +425,54 @@ class GitHubOTAUpdater:
                 target_path = f"{target_dir}/{filename}" if target_dir else filename
                 temp_path = f"{target_path}.tmp"
 
-                # Stream download in chunks
-                chunk_size = 2048  # 2KB chunks to minimize memory usage
+                # Ultra-small chunks for memory-constrained environment
+                chunk_size = 256  # 256 bytes - much smaller to avoid allocation failures
                 total_bytes = 0
 
-                log_debug(f"Starting streaming download of {filename} in {chunk_size} byte chunks", "OTA")
+                log_debug(f"Starting ultra-minimal streaming of {filename} in {chunk_size} byte chunks", "OTA")
 
+                # Get content but process it very carefully
+                content = response_or_error.text
+                content_size = len(content)
+
+                # Validate content immediately
+                if content_size == 0:
+                    log_error(f"Downloaded {filename} is empty", "OTA")
+                    response_or_error.close()
+                    return False
+
+                # Quick error page check
+                if content.strip().startswith('<!DOCTYPE html>') or content.strip().startswith('<html'):
+                    log_error(f"Downloaded {filename} appears to be an error page", "OTA")
+                    response_or_error.close()
+                    return False
+
+                response_or_error.close()
+
+                # Force garbage collection after getting content
+                gc.collect()
+
+                # Write content in ultra-small chunks with aggressive memory management
                 with open(temp_path, "w") as f:
-                    # Read response content in chunks
-                    content = response_or_error.text
-
-                    # For text content, we still need to handle it as a whole
-                    # but we can write it in chunks to reduce memory pressure
-                    content_size = len(content)
-
-                    # Validate content is not empty or error page
-                    if content_size == 0:
-                        log_error(f"Downloaded {filename} is empty", "OTA")
-                        response_or_error.close()
-                        return False
-
-                    # Check if content looks like an error page
-                    if content.strip().startswith('<!DOCTYPE html>') or content.strip().startswith('<html'):
-                        log_error(f"Downloaded {filename} appears to be an error page", "OTA")
-                        response_or_error.close()
-                        return False
-
-                    # Write content in chunks to reduce memory pressure
                     for i in range(0, content_size, chunk_size):
+                        # Force garbage collection before each chunk
+                        gc.collect()
+
                         chunk = content[i:i + chunk_size]
                         f.write(chunk)
                         total_bytes += len(chunk)
 
-                        # Force garbage collection every few chunks
-                        if i % (chunk_size * 4) == 0:  # Every 8KB
+                        # Clear the chunk variable immediately
+                        del chunk
+
+                        # Force garbage collection every 2 chunks (512 bytes)
+                        if i % (chunk_size * 2) == 0:
                             gc.collect()
                             free_mem = gc.mem_free()
-                            log_debug(f"Streaming progress: {total_bytes}/{content_size} bytes, free memory: {free_mem}", "OTA")
+                            log_debug(f"Ultra-streaming: {total_bytes}/{content_size} bytes, mem: {free_mem}", "OTA")
 
-                response_or_error.close()
-
-                # Force garbage collection after download
+                # Clear content variable to free memory
+                del content
                 gc.collect()
 
                 # Atomic rename
@@ -478,17 +491,14 @@ class GitHubOTAUpdater:
                     log_error(f"File {target_path} was not created successfully", "OTA")
                     return False
 
-                # Check memory after download
+                # Final garbage collection and memory check
                 gc.collect()
-                free_mem_after = gc.mem_free()
-                log_debug(f"Free memory after streaming download: {free_mem_after}", "OTA")
-
-                log_info(f"Downloaded {filename} successfully using streaming ({total_bytes} bytes)", "OTA")
+                final_mem = gc.mem_free()
+                log_info(f"Downloaded {filename} successfully using ultra-streaming ({total_bytes} bytes, mem: {final_mem})", "OTA")
                 return True
 
             except Exception as e:
-                log_error(f"Failed to write {filename} during streaming: {e}", "OTA")
-                response_or_error.close()
+                log_error(f"Failed to write {filename} during ultra-streaming: {e}", "OTA")
 
                 # Clean up temp file if it exists
                 temp_path = f"{target_dir}/{filename}.tmp" if target_dir else f"{filename}.tmp"
@@ -500,7 +510,7 @@ class GitHubOTAUpdater:
                 return False
 
         except Exception as e:
-            log_error(f"Streaming download failed for {filename}: {e}", "OTA")
+            log_error(f"Ultra-streaming download failed for {filename}: {e}", "OTA")
             return False
 
     def _download_file_standard(self, url, filename, target_dir=""):

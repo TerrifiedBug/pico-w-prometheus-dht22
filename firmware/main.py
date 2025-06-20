@@ -330,7 +330,7 @@ Visit /update/status to monitor initial progress.
 
 def perform_scheduled_update():
     """
-    Perform the scheduled OTA update with progress tracking.
+    Perform the scheduled OTA update with progress tracking and memory optimization.
     """
     try:
         log_info(f"Starting scheduled update to version {pending_update['version']}", "OTA")
@@ -339,6 +339,12 @@ def perform_scheduled_update():
         pending_update["status"] = "downloading"
         pending_update["progress"] = 25
         pending_update["message"] = "Downloading update files..."
+
+        # CRITICAL: Force aggressive memory cleanup before OTA
+        log_info("Preparing for OTA: freeing memory...", "OTA")
+        gc.collect()
+        initial_mem = gc.mem_free()
+        log_info(f"Memory before OTA: {initial_mem} bytes", "OTA")
 
         # Check for updates again (quick check)
         has_update, new_version, _ = ota_updater.check_for_updates()
@@ -350,6 +356,12 @@ def perform_scheduled_update():
 
         # Update status: Downloading files
         log_info("Downloading update files...", "OTA")
+
+        # Force another garbage collection before download
+        gc.collect()
+        download_mem = gc.mem_free()
+        log_info(f"Memory before download: {download_mem} bytes", "OTA")
+
         download_success = ota_updater.download_update(new_version, None)
 
         if not download_success:
@@ -364,6 +376,11 @@ def perform_scheduled_update():
         pending_update["progress"] = 75
         pending_update["message"] = "Applying update and backing up files..."
         log_info("Applying update...", "OTA")
+
+        # Force garbage collection before applying
+        gc.collect()
+        apply_mem = gc.mem_free()
+        log_info(f"Memory before apply: {apply_mem} bytes", "OTA")
 
         # Small delay to allow status page to show this step
         time.sleep(1)
