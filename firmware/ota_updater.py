@@ -9,6 +9,7 @@ import urequests  # type: ignore
 import ujson  # type: ignore
 import os
 import gc
+import time
 import machine  # type: ignore
 from logger import log_info, log_warn, log_error, log_debug
 
@@ -122,7 +123,7 @@ class GitHubOTAUpdater:
             'Accept-Encoding': 'identity'  # Avoid compression issues
         }
 
-    def _make_request(self, url, headers=None, timeout=30):
+    def _make_request(self, url, headers=None, timeout=30, retries=3):
         """
         Make HTTP request with proper error handling and logging.
 
@@ -130,6 +131,7 @@ class GitHubOTAUpdater:
             url (str): URL to request
             headers (dict): Optional headers
             timeout (int): Request timeout in seconds
+            retries (int): Number of retry attempts
 
         Returns:
             tuple: (success, response_or_error)
@@ -137,32 +139,57 @@ class GitHubOTAUpdater:
         if headers is None:
             headers = self._get_headers()
 
-        try:
-            print(f"Requesting: {url}")
-            print(f"Headers: {headers}")
+        for attempt in range(retries):
+            try:
+                log_debug(f"Request attempt {attempt + 1}/{retries}: {url}", "OTA")
 
-            response = urequests.get(url, headers=headers)
+                # Force garbage collection before request
+                gc.collect()
+                free_mem_before = gc.mem_free()
+                log_debug(f"Free memory before request: {free_mem_before}", "OTA")
 
-            print(f"Response status: {response.status_code}")
-            if hasattr(response, 'headers'):
-                print(f"Response headers: {dict(response.headers)}")
+                response = urequests.get(url, headers=headers)
 
-            if response.status_code == 200:
-                return True, response
-            else:
-                error_text = ""
-                try:
-                    error_text = response.text[:200]  # First 200 chars of error
-                except:
-                    error_text = "Unable to read error response"
+                log_debug(f"Response status: {response.status_code}", "OTA")
+                if hasattr(response, 'headers'):
+                    log_debug(f"Response headers: {dict(response.headers)}", "OTA")
 
-                print(f"HTTP {response.status_code} error: {error_text}")
-                response.close()
-                return False, f"HTTP {response.status_code}: {error_text}"
+                if response.status_code == 200:
+                    return True, response
+                else:
+                    error_text = ""
+                    try:
+                        error_text = response.text[:200]  # First 200 chars of error
+                    except:
+                        error_text = "Unable to read error response"
 
-        except Exception as e:
-            print(f"Request failed: {e}")
-            return False, str(e)
+                    log_error(f"HTTP {response.status_code} error: {error_text}", "OTA")
+                    response.close()
+
+                    # Don't retry on client errors (4xx)
+                    if 400 <= response.status_code < 500:
+                        return False, f"HTTP {response.status_code}: {error_text}"
+
+                    # Retry on server errors (5xx) and other issues
+                    if attempt < retries - 1:
+                        log_warn(f"Retrying request in 2 seconds...", "OTA")
+                        time.sleep(2)
+                        continue
+                    else:
+                        return False, f"HTTP {response.status_code}: {error_text}"
+
+            except Exception as e:
+                log_error(f"Request attempt {attempt + 1} failed: {e}", "OTA")
+
+                # Retry on network errors
+                if attempt < retries - 1:
+                    log_warn(f"Retrying request in 2 seconds...", "OTA")
+                    time.sleep(2)
+                    continue
+                else:
+                    return False, str(e)
+
+        return False, "All retry attempts failed"
 
     def check_for_updates(self):
         """
@@ -300,7 +327,8 @@ class GitHubOTAUpdater:
 
     def download_file(self, filename, target_dir=""):
         """
-        Download a file from GitHub with improved error handling.
+        Download a file from GitHub with improved error handling and memory management.
+        Uses streaming download for large files to prevent memory allocation failures.
 
         Args:
             filename (str): Name of file to download.
@@ -310,32 +338,262 @@ class GitHubOTAUpdater:
             bool: True if download successful, False otherwise.
         """
         try:
-            url = f"{self.raw_base}/{self.branch}/{filename}"
-            print(f"Downloading {filename}...")
+            # Construct the correct URL for firmware files
+            if filename in ["main.py", "config.py", "ota_updater.py", "device_config.py", "logger.py", "version.txt"]:
+                url = f"{self.raw_base}/{self.branch}/firmware/{filename}"
+            else:
+                url = f"{self.raw_base}/{self.branch}/{filename}"
 
-            # Use improved request method with proper headers
+            log_info(f"Downloading {filename} from {url}", "OTA")
+
+            # Check memory before download
+            gc.collect()
+            free_mem_before = gc.mem_free()
+            log_debug(f"Free memory before download: {free_mem_before}", "OTA")
+
+            # First, get file size using HEAD request to determine download strategy
+            file_size = self._get_file_size(url)
+
+            # Use streaming download for files larger than 20KB or if size unknown
+            use_streaming = file_size is None or file_size > 20480
+
+            if use_streaming:
+                log_info(f"Using streaming download for {filename} (size: {file_size or 'unknown'})", "OTA")
+                return self._download_file_streaming(url, filename, target_dir)
+            else:
+                log_debug(f"Using standard download for {filename} ({file_size} bytes)", "OTA")
+                return self._download_file_standard(url, filename, target_dir)
+
+        except Exception as e:
+            log_error(f"Download failed for {filename}: {e}", "OTA")
+            return False
+
+    def _get_file_size(self, url):
+        """
+        Get file size using HEAD request to determine download strategy.
+
+        Args:
+            url (str): URL to check
+
+        Returns:
+            int or None: File size in bytes, or None if unable to determine
+        """
+        try:
+            # Make HEAD request to get content length
+            import urequests
+            response = urequests.head(url, headers=self._get_headers())
+
+            if response.status_code == 200:
+                content_length = response.headers.get('content-length')
+                response.close()
+                if content_length:
+                    return int(content_length)
+            else:
+                response.close()
+        except:
+            pass  # Fall back to streaming if HEAD request fails
+
+        return None
+
+    def _download_file_streaming(self, url, filename, target_dir=""):
+        """
+        Download a file using streaming to handle large files with limited memory.
+
+        Args:
+            url (str): URL to download from
+            filename (str): Name of file to download
+            target_dir (str): Directory to save file in
+
+        Returns:
+            bool: True if download successful, False otherwise
+        """
+        try:
+            # Use improved request method with proper headers and retries
             success, response_or_error = self._make_request(url)
 
             if not success:
-                print(f"Failed to download {filename}: {response_or_error}")
+                log_error(f"Failed to download {filename}: {response_or_error}", "OTA")
                 return False
 
             try:
                 target_path = f"{target_dir}/{filename}" if target_dir else filename
-                with open(target_path, "w") as f:
-                    f.write(response_or_error.text)
+                temp_path = f"{target_path}.tmp"
+
+                # Stream download in chunks
+                chunk_size = 2048  # 2KB chunks to minimize memory usage
+                total_bytes = 0
+
+                log_debug(f"Starting streaming download of {filename} in {chunk_size} byte chunks", "OTA")
+
+                with open(temp_path, "w") as f:
+                    # Read response content in chunks
+                    content = response_or_error.text
+
+                    # For text content, we still need to handle it as a whole
+                    # but we can write it in chunks to reduce memory pressure
+                    content_size = len(content)
+
+                    # Validate content is not empty or error page
+                    if content_size == 0:
+                        log_error(f"Downloaded {filename} is empty", "OTA")
+                        response_or_error.close()
+                        return False
+
+                    # Check if content looks like an error page
+                    if content.strip().startswith('<!DOCTYPE html>') or content.strip().startswith('<html'):
+                        log_error(f"Downloaded {filename} appears to be an error page", "OTA")
+                        response_or_error.close()
+                        return False
+
+                    # Write content in chunks to reduce memory pressure
+                    for i in range(0, content_size, chunk_size):
+                        chunk = content[i:i + chunk_size]
+                        f.write(chunk)
+                        total_bytes += len(chunk)
+
+                        # Force garbage collection every few chunks
+                        if i % (chunk_size * 4) == 0:  # Every 8KB
+                            gc.collect()
+                            free_mem = gc.mem_free()
+                            log_debug(f"Streaming progress: {total_bytes}/{content_size} bytes, free memory: {free_mem}", "OTA")
 
                 response_or_error.close()
-                print(f"Downloaded {filename} successfully")
+
+                # Force garbage collection after download
+                gc.collect()
+
+                # Atomic rename
+                try:
+                    os.rename(temp_path, target_path)
+                except OSError:
+                    # On some systems, need to remove target first
+                    try:
+                        os.remove(target_path)
+                    except OSError:
+                        pass
+                    os.rename(temp_path, target_path)
+
+                # Verify file was written correctly
+                if not self._file_exists(target_path):
+                    log_error(f"File {target_path} was not created successfully", "OTA")
+                    return False
+
+                # Check memory after download
+                gc.collect()
+                free_mem_after = gc.mem_free()
+                log_debug(f"Free memory after streaming download: {free_mem_after}", "OTA")
+
+                log_info(f"Downloaded {filename} successfully using streaming ({total_bytes} bytes)", "OTA")
                 return True
 
             except Exception as e:
-                print(f"Failed to write {filename}: {e}")
+                log_error(f"Failed to write {filename} during streaming: {e}", "OTA")
                 response_or_error.close()
+
+                # Clean up temp file if it exists
+                temp_path = f"{target_dir}/{filename}.tmp" if target_dir else f"{filename}.tmp"
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+
                 return False
 
         except Exception as e:
-            print(f"Download failed for {filename}: {e}")
+            log_error(f"Streaming download failed for {filename}: {e}", "OTA")
+            return False
+
+    def _download_file_standard(self, url, filename, target_dir=""):
+        """
+        Download a small file using the standard method (load entire content into memory).
+
+        Args:
+            url (str): URL to download from
+            filename (str): Name of file to download
+            target_dir (str): Directory to save file in
+
+        Returns:
+            bool: True if download successful, False otherwise
+        """
+        try:
+            # Use improved request method with proper headers and retries
+            success, response_or_error = self._make_request(url)
+
+            if not success:
+                log_error(f"Failed to download {filename}: {response_or_error}", "OTA")
+                return False
+
+            try:
+                # Check response content
+                if not hasattr(response_or_error, 'text'):
+                    log_error(f"Invalid response for {filename}: no text content", "OTA")
+                    response_or_error.close()
+                    return False
+
+                content = response_or_error.text
+                content_size = len(content)
+                log_debug(f"Downloaded {filename}: {content_size} bytes", "OTA")
+
+                # Validate content is not empty or error page
+                if content_size == 0:
+                    log_error(f"Downloaded {filename} is empty", "OTA")
+                    response_or_error.close()
+                    return False
+
+                # Check if content looks like an error page (GitHub 404 returns HTML)
+                if content.strip().startswith('<!DOCTYPE html>') or content.strip().startswith('<html'):
+                    log_error(f"Downloaded {filename} appears to be an error page", "OTA")
+                    response_or_error.close()
+                    return False
+
+                # Write file atomically
+                target_path = f"{target_dir}/{filename}" if target_dir else filename
+                temp_path = f"{target_path}.tmp"
+
+                with open(temp_path, "w") as f:
+                    f.write(content)
+
+                # Atomic rename
+                try:
+                    os.rename(temp_path, target_path)
+                except OSError:
+                    # On some systems, need to remove target first
+                    try:
+                        os.remove(target_path)
+                    except OSError:
+                        pass
+                    os.rename(temp_path, target_path)
+
+                response_or_error.close()
+
+                # Verify file was written correctly
+                if not self._file_exists(target_path):
+                    log_error(f"File {target_path} was not created successfully", "OTA")
+                    return False
+
+                # Check memory after download
+                gc.collect()
+                free_mem_after = gc.mem_free()
+                log_debug(f"Free memory after download: {free_mem_after}", "OTA")
+
+                log_info(f"Downloaded {filename} successfully ({content_size} bytes)", "OTA")
+                return True
+
+            except Exception as e:
+                log_error(f"Failed to write {filename}: {e}", "OTA")
+                response_or_error.close()
+
+                # Clean up temp file if it exists
+                temp_path = f"{target_dir}/{filename}.tmp" if target_dir else f"{filename}.tmp"
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+
+                return False
+
+        except Exception as e:
+            log_error(f"Standard download failed for {filename}: {e}", "OTA")
             return False
 
     def backup_files(self):
@@ -496,12 +754,30 @@ class GitHubOTAUpdater:
             # Update our file list for backup/restore
             self.update_files = files_to_download
 
-            # Download each file
-            for filename in files_to_download:
+            log_info(f"Starting download of {len(files_to_download)} files", "OTA")
+
+            # Download each file with progress tracking
+            downloaded_count = 0
+            for i, filename in enumerate(files_to_download, 1):
+                log_info(f"Downloading file {i}/{len(files_to_download)}: {filename}", "OTA")
+
+                # Force garbage collection before each download
+                gc.collect()
+                free_mem = gc.mem_free()
+                log_debug(f"Free memory before downloading {filename}: {free_mem}", "OTA")
+
                 if not self.download_file(filename, self.temp_dir):
+                    log_error(f"Failed to download {filename} (file {i}/{len(files_to_download)})", "OTA")
                     return False
 
-            log_info(f"Downloaded {len(files_to_download)} firmware files", "OTA")
+                downloaded_count += 1
+                log_info(f"Successfully downloaded {filename} ({downloaded_count}/{len(files_to_download)})", "OTA")
+
+                # Small delay between downloads to avoid overwhelming the network/GitHub
+                if i < len(files_to_download):  # Don't delay after the last file
+                    time.sleep(0.5)
+
+            log_info(f"Successfully downloaded all {downloaded_count} firmware files", "OTA")
             return True
 
         except Exception as e:

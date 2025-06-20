@@ -500,11 +500,11 @@ def handle_update_status():
         <div class="info-section">
             <h3>Current Step: {message}</h3>
             <div style="margin-top: 15px;">
-                <div>{"✓" if True else "○"} Update scheduled</div>
-                <div>{"✓" if time_remaining <= 0 else "○"} Waiting for start time</div>
-                <div>{"✓" if update_status in ["downloading", "applying", "restarting"] else "○"} Download update files</div>
-                <div>{"✓" if update_status in ["applying", "restarting"] else "○"} Apply update and backup</div>
-                <div>{"✓" if update_status == "restarting" else "○"} Device restart</div>
+                <div>{"[X]" if True else "[ ]"} Update scheduled</div>
+                <div>{"[X]" if time_remaining <= 0 else "[ ]"} Waiting for start time</div>
+                <div>{"[X]" if update_status in ["downloading", "applying", "restarting"] else "[ ]"} Download update files</div>
+                <div>{"[X]" if update_status in ["applying", "restarting"] else "[ ]"} Apply update and backup</div>
+                <div>{"[X]" if update_status == "restarting" else "[ ]"} Device restart</div>
             </div>
         </div>
 
@@ -887,7 +887,7 @@ def handle_config_page():
         <h1>Device Configuration</h1>
 
         <div class="nav">
-            <a href="/">← Back to Main Menu</a>
+            <a href="/">< Back to Main Menu</a>
             <a href="/health">Health Check</a>
             <a href="/metrics">View Metrics</a>
             <a href="/logs">System Logs</a>
@@ -1325,7 +1325,7 @@ def handle_logs_page(request):
         <h1>System Logs</h1>
 
         <div class="nav">
-            <a href="/">← Back to Main Menu</a>
+            <a href="/">< Back to Main Menu</a>
             <a href="/health">Health Check</a>
             <a href="/config">Configuration</a>
             <a href="/update/status">OTA Status</a>
