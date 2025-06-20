@@ -152,6 +152,7 @@ def read_dht22():
         sensor.measure()
         t = sensor.temperature()
         h = sensor.humidity()
+        # Removed verbose sensor reading logs to save log space
         return round(t, 2), round(h, 2)
     except Exception as e:
         log_error(f"Sensor read failed: {e}", "SENSOR")
@@ -301,26 +302,8 @@ def handle_update_request_delayed():
 
         log_info(f"Update to {new_version} scheduled for 10 seconds", "OTA")
 
-        # Return plain text response with redirect
-        response_text = f"""Update Scheduled Successfully!
-================================
-
-Current Version: {current_version}
-Target Version: {new_version}
-Update will start in: 10 seconds
-
-IMPORTANT: What happens during update:
-1. Update begins automatically after 10 seconds
-2. Status page will show progress briefly
-3. Device WILL RESTART during update (this is normal!)
-4. Web page will timeout when device restarts
-5. Wait 60-90 seconds for update to complete
-6. Device will come back online automatically
-7. Visit /health to confirm new version
-
-Visit /update/status to monitor initial progress.
-"""
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nRefresh: 3; url=/update/status\r\n\r\n{response_text}"
+        # Immediately redirect to status page
+        return "HTTP/1.0 302 Found\r\nLocation: /update/status\r\n\r\n"
 
     except Exception as e:
         log_error(f"Update request failed: {e}", "OTA")
@@ -440,8 +423,11 @@ def handle_request(cl, request):
         method = parts[0]
         path = parts[1]
 
+        # Remove query parameters from path for routing
         if '?' in path:
             path = path.split('?')[0]
+
+        # Removed verbose HTTP request logs to save log space
 
         # Route requests
         if method == "GET" and path == METRICS_ENDPOINT:
@@ -528,6 +514,7 @@ def run_server():
             s.settimeout(1.0)  # 1 second timeout
             try:
                 cl, addr = s.accept()
+                # Removed verbose connection logs to save log space
             except OSError:
                 continue  # Timeout, continue loop
 
