@@ -140,58 +140,6 @@ def handle_config_page():
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nConfig error: {e}"
 
 
-def handle_update_status(ota_updater, pending_update):
-    """Handle update status with plain text response."""
-    if not ota_updater:
-        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nOTA disabled"
-
-    try:
-        status_info = ota_updater.get_update_status()
-        current_version = status_info['current_version']
-
-        if pending_update["scheduled"]:
-            time_remaining = max(0, int(pending_update["start_time"] - time.time()))
-            target_version = pending_update["version"]
-            update_status = pending_update["status"]
-            progress = pending_update["progress"]
-            message = pending_update["message"]
-
-            status_text = f"""OTA Update Status
-================
-
-Current Version: {current_version}
-Target Version: {target_version}
-Status: {update_status.upper()}
-Progress: {progress}%
-Message: {message}
-Time Remaining: {time_remaining}s
-
-Repository: {status_info['repo']}
-
-IMPORTANT: Device will restart during update!
-Wait 60-90 seconds after restart, then check /health
-"""
-            return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nRefresh: 2\r\n\r\n{status_text}"
-        else:
-            status_text = f"""OTA System Status
-================
-
-Current Version: {current_version}
-OTA Enabled: {"Yes" if status_info['ota_enabled'] else "No"}
-Auto Updates: {"Yes" if status_info['auto_check'] else "No"}
-Repository: {status_info['repo']}
-Branch: {status_info['branch']}
-
-Status: READY (No pending updates)
-
-Actions: /update (check for updates)
-"""
-            return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{status_text}"
-    except Exception as e:
-        log_error(f"Status error: {e}", "OTA")
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nStatus error: {e}"
-
-
 def handle_logs_page(request):
     """Handle logs page with plain text output."""
     try:

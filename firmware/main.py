@@ -34,23 +34,14 @@ from web_interface import (
     handle_health_check,
     handle_config_page,
     handle_config_update,
-    handle_update_status,
     handle_logs_page,
 )
 
 # Record boot time using ticks for accurate uptime calculation
 boot_ticks = time.ticks_ms()
 
-# Global update queue for delayed updates with progress tracking
-pending_update = {
-    "scheduled": False,
-    "version": None,
-    "start_time": 0,
-    "current_version": None,
-    "status": "idle",  # idle, scheduled, downloading, applying, restarting, completed
-    "progress": 0,
-    "message": "Ready for updates"
-}
+# Simplified update tracking - no complex status
+update_in_progress = False
 
 # Wi-Fi Setup with safety checks
 try:
@@ -265,24 +256,25 @@ def get_system_info():
     }
 
 
-def handle_update_request_delayed():
+def handle_update_request():
     """
-    Handle OTA update request with delayed execution and redirect to status page.
+    Handle OTA update request with immediate execution.
 
     Returns:
         str: HTTP response for update request.
     """
+    global update_in_progress
+
     if not ota_updater:
         log_warn("OTA update requested but OTA not enabled", "OTA")
         return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nOTA not enabled"
 
+    if update_in_progress:
+        log_info("Update already in progress", "OTA")
+        return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nUpdate already in progress\n\nDevice will restart automatically when complete."
+
     try:
         log_info("Manual update requested", "OTA")
-
-        # Check if update is already scheduled
-        if pending_update["scheduled"]:
-            log_info("Update already scheduled, redirecting to status", "OTA")
-            return "HTTP/1.0 302 Found\r\nLocation: /update/status\r\n\r\n"
 
         # Check for available updates
         has_update, new_version, _ = ota_updater.check_for_updates()
@@ -294,36 +286,44 @@ def handle_update_request_delayed():
         # Get current version for display
         current_version = ota_updater.get_current_version()
 
-        # Schedule update for 10 seconds later
-        pending_update["scheduled"] = True
-        pending_update["version"] = new_version
-        pending_update["current_version"] = current_version
-        pending_update["start_time"] = time.time() + 10
+        # Set update in progress flag
+        update_in_progress = True
 
-        log_info(f"Update to {new_version} scheduled for 10 seconds", "OTA")
+        log_info(f"Starting immediate update: {current_version} -> {new_version}", "OTA")
 
-        # Immediately redirect to status page
-        return "HTTP/1.0 302 Found\r\nLocation: /update/status\r\n\r\n"
+        # Return simple response and start update
+        response_text = f"""Update Started Successfully!
+
+Current Version: {current_version}
+Target Version: {new_version}
+
+The update is now running in the background.
+Device will restart automatically in 1-2 minutes.
+
+After restart, visit /health to confirm the new version.
+
+DO NOT power off the device during update!
+"""
+
+        # Start update in background (will happen after response is sent)
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{response_text}"
 
     except Exception as e:
+        update_in_progress = False
         log_error(f"Update request failed: {e}", "OTA")
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate scheduling failed: {e}"
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate failed: {e}"
 
 
-def perform_scheduled_update():
+def perform_immediate_update():
     """
-    Perform the scheduled OTA update with progress tracking and memory optimization.
+    Perform immediate OTA update with minimal memory usage.
     """
+    global update_in_progress
+
     try:
-        log_info(f"Starting scheduled update to version {pending_update['version']}", "OTA")
+        log_info("Starting immediate OTA update", "OTA")
 
-        # Update status: Starting download
-        pending_update["status"] = "downloading"
-        pending_update["progress"] = 25
-        pending_update["message"] = "Downloading update files..."
-
-        # CRITICAL: Force aggressive memory cleanup before OTA
-        log_info("Preparing for OTA: freeing memory...", "OTA")
+        # Force aggressive memory cleanup before OTA
         gc.collect()
         initial_mem = gc.mem_free()
         log_info(f"Memory before OTA: {initial_mem} bytes", "OTA")
@@ -331,12 +331,10 @@ def perform_scheduled_update():
         # Check for updates again (quick check)
         has_update, new_version, _ = ota_updater.check_for_updates()
         if not has_update:
-            log_warn("No update available during scheduled update", "OTA")
-            pending_update["scheduled"] = False
-            pending_update["status"] = "idle"
+            log_warn("No update available during immediate update", "OTA")
+            update_in_progress = False
             return
 
-        # Update status: Downloading files
         log_info("Downloading update files...", "OTA")
 
         # Force another garbage collection before download
@@ -348,15 +346,9 @@ def perform_scheduled_update():
 
         if not download_success:
             log_error("Download failed", "OTA")
-            pending_update["status"] = "failed"
-            pending_update["message"] = "Download failed"
-            pending_update["scheduled"] = False
+            update_in_progress = False
             return
 
-        # Update status: Applying update
-        pending_update["status"] = "applying"
-        pending_update["progress"] = 75
-        pending_update["message"] = "Applying update and backing up files..."
         log_info("Applying update...", "OTA")
 
         # Force garbage collection before applying
@@ -364,20 +356,11 @@ def perform_scheduled_update():
         apply_mem = gc.mem_free()
         log_info(f"Memory before apply: {apply_mem} bytes", "OTA")
 
-        # Small delay to allow status page to show this step
-        time.sleep(1)
-
         # Apply the update
         apply_success = ota_updater.apply_update(new_version)
 
         if apply_success:
-            # Update status: About to restart
-            pending_update["status"] = "restarting"
-            pending_update["progress"] = 100
-            pending_update["message"] = "Update complete, restarting device..."
             log_info("Update completed successfully, device will restart in 2 seconds", "OTA")
-
-            # Brief delay to show final status
             time.sleep(2)
 
             # Device will restart here
@@ -385,15 +368,11 @@ def perform_scheduled_update():
             machine.reset()
         else:
             log_error("Update application failed", "OTA")
-            pending_update["status"] = "failed"
-            pending_update["message"] = "Update application failed"
-            pending_update["scheduled"] = False
+            update_in_progress = False
 
     except Exception as e:
-        log_error(f"Scheduled update failed: {e}", "OTA")
-        pending_update["status"] = "failed"
-        pending_update["message"] = f"Update error: {str(e)}"
-        pending_update["scheduled"] = False
+        log_error(f"Immediate update failed: {e}", "OTA")
+        update_in_progress = False
 
 
 # HTTP Server Setup and Request Handling
@@ -462,15 +441,14 @@ def handle_request(cl, request):
             response = handle_logs_page(request)
             cl.send(response)
 
-        elif method == "GET" and path == "/update/status":
-            # Update status endpoint
-            response = handle_update_status(ota_updater, pending_update)
+        elif method == "GET" and path == "/update":
+            # Manual update trigger - immediate execution
+            response = handle_update_request()
             cl.send(response)
 
-        elif method == "GET" and path == "/update":
-            # Manual update trigger
-            response = handle_update_request_delayed()
-            cl.send(response)
+            # If update was started, perform it after sending response
+            if update_in_progress:
+                perform_immediate_update()
 
         elif method == "GET" and path == "/":
             # Root endpoint - dashboard interface
@@ -506,10 +484,6 @@ def run_server():
 
     while True:
         try:
-            # Check for scheduled updates
-            if pending_update["scheduled"] and time.time() >= pending_update["start_time"]:
-                perform_scheduled_update()
-
             # Accept connections with timeout
             s.settimeout(1.0)  # 1 second timeout
             try:
