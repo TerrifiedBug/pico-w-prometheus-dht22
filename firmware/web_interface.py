@@ -5,6 +5,7 @@ Ultra-lightweight implementation to maximize memory for OTA updates.
 
 import time
 import gc
+from urllib.parse import unquote_plus
 from logger import log_info, log_warn, log_error, log_debug, get_logger
 from device_config import (
     load_device_config,
@@ -196,36 +197,24 @@ Showing last 50 entries. Logs cleared on restart.
 
 def parse_form_data(request):
     """Parse form data from HTTP POST request."""
+    MAX_KEY_LEN = 32
+    MAX_VALUE_LEN = 128
     try:
-        request_str = request.decode('utf-8')
-        lines = request_str.split('\r\n')
-
-        form_data_line = ""
-        found_empty = False
-        for line in lines:
-            if found_empty and line:
-                form_data_line = line
-                break
-            if line == "":
-                found_empty = True
-
-        if not form_data_line:
+        request_str = request.decode("utf-8")
+        body_start = request_str.find("\r\n\r\n")
+        if body_start == -1:
+            return {}
+        form_body = request_str[body_start + 4 :]
+        if not form_body:
             return {}
 
         form_data = {}
-        pairs = form_data_line.split('&')
+        pairs = form_body.split("&")
         for pair in pairs:
-            if '=' in pair:
-                key, value = pair.split('=', 1)
-                key = key.replace('+', ' ')
-                value = value.replace('+', ' ')
-                # Basic URL decoding
-                value = value.replace('%20', ' ').replace('%21', '!').replace('%22', '"')
-                value = value.replace('%23', '#').replace('%24', '$').replace('%25', '%')
-                value = value.replace('%26', '&').replace('%27', "'").replace('%28', '(')
-                value = value.replace('%29', ')').replace('%2A', '*').replace('%2B', '+')
-                value = value.replace('%2C', ',').replace('%2D', '-').replace('%2E', '.')
-                value = value.replace('%2F', '/')
+            if "=" in pair:
+                key, value = pair.split("=", 1)
+                key = unquote_plus(key)[:MAX_KEY_LEN]
+                value = unquote_plus(value)[:MAX_VALUE_LEN]
                 form_data[key] = value
 
         return form_data
