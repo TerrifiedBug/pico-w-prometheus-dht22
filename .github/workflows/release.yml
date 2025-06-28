@@ -47,6 +47,9 @@ jobs:
           # Copy all firmware files
           cp firmware/* release-package/
 
+          # Include license file
+          cp LICENSE release-package/
+
           # Update version.txt with the tag version
           echo "${{ steps.version.outputs.version }}" > release-package/version.txt
 
