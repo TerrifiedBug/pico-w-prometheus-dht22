@@ -50,7 +50,7 @@ Add your device to Prometheus configuration:
 scrape_configs:
   - job_name: "pico-sensors"
     static_configs:
-      - targets: ["192.168.1.100:80"] # Replace with your device IP
+      - targets: ["<device-ip>:80"] # Replace <device-ip> with your device IP
 ```
 
 Metrics available at `/metrics`:
@@ -150,4 +150,4 @@ For issues or questions:
 
 ## License
 
-This project is open source. See the repository for license details.
+This project is licensed under the MIT License.
