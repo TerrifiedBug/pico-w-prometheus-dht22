@@ -285,7 +285,7 @@ def get_system_info():
 
 def handle_update_request():
     """
-    Handle OTA update request with immediate execution - plain text response.
+    Handle OTA update request with immediate execution - minimal HTML with links.
 
     Returns:
         str: HTTP response for update request.
@@ -294,11 +294,11 @@ def handle_update_request():
 
     if not ota_updater:
         log_warn("OTA update requested but OTA not enabled", "OTA")
-        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nOTA NOT ENABLED\n\nOver-the-air updates are disabled.\nEnable in configuration or return home.\n\nLinks: /config /\n"
+        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>OTA Not Enabled</title></head><body><h1>OTA NOT ENABLED</h1><p>Over-the-air updates are disabled.</p><p><a href='/config'>Enable in configuration</a> | <a href='/'>Return home</a></p></body></html>"
 
     if update_in_progress:
         log_info("Update already in progress", "OTA")
-        return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nUPDATE IN PROGRESS\n\nAn update is already running.\nDevice will restart automatically when complete.\n\nMonitor progress: /health?update=true\n"
+        return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>Update In Progress</title></head><body><h1>UPDATE IN PROGRESS</h1><p>An update is already running.<br>Device will restart automatically when complete.</p><p><a href='/health?update=true'>Monitor progress</a></p></body></html>"
 
     try:
         log_info("Manual update requested", "OTA")
@@ -308,7 +308,7 @@ def handle_update_request():
 
         if not has_update:
             log_info("No updates available", "OTA")
-            return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nNO UPDATES AVAILABLE\n\nCurrent version is up to date.\n\nLinks: /health /\n"
+            return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>No Updates</title></head><body><h1>NO UPDATES AVAILABLE</h1><p>Current version is up to date.</p><p><a href='/health'>View system status</a> | <a href='/'>Return home</a></p></body></html>"
 
         # Get current version for display
         current_version = ota_updater.get_current_version()
@@ -318,28 +318,31 @@ def handle_update_request():
 
         log_info(f"Starting immediate update: {current_version} -> {new_version}", "OTA")
 
-        # Return plain text response
-        update_response = f"""UPDATE STARTED SUCCESSFULLY
+        # Return minimal HTML response with links
+        update_html = f"""<!DOCTYPE html><html><head><title>Update Started</title></head><body>
+<h1>UPDATE STARTED SUCCESSFULLY</h1>
 
-Current Version: {current_version}
-Target Version: {new_version}
-Status: Downloading and applying update...
+<h2>Update Details</h2>
+<p><strong>Current Version:</strong> {current_version}<br>
+<strong>Target Version:</strong> {new_version}<br>
+<strong>Status:</strong> Downloading and applying update...</p>
 
-IMPORTANT:
-- Device will restart automatically in 1-2 minutes
-- DO NOT power off the device during update
-- You may lose connection temporarily during restart
+<h2>Important</h2>
+<p>• Device will restart automatically in 1-2 minutes<br>
+• DO NOT power off the device during update<br>
+• You may lose connection temporarily during restart</p>
 
-Monitor progress: /health?update=true
-"""
+<h2>Links</h2>
+<p><a href="/health?update=true">Monitor progress</a> | <a href="/">Dashboard</a></p>
+</body></html>"""
 
         # Start update in background (will happen after response is sent)
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{update_response}"
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{update_html}"
 
     except Exception as e:
         update_in_progress = False
         log_error(f"Update request failed: {e}", "OTA")
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUPDATE FAILED\n\nError: {e}\n\nReturn home: /\n"
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>Update Failed</title></head><body><h1>UPDATE FAILED</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p></body></html>"
 
 
 def perform_immediate_update():

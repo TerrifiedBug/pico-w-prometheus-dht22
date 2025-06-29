@@ -67,7 +67,7 @@ def handle_root_page(sensor_data, system_info, ota_updater):
 
 
 def handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid, request_str=""):
-    """Handle health check with plain text response for memory efficiency."""
+    """Handle health check with minimal HTML and clickable links."""
     try:
         temp, hum = sensor_data
         wifi_status, _, ip_address = system_info["wifi"]
@@ -78,34 +78,39 @@ def handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid, reque
         config = get_config_for_metrics()
         location, device_name = config["location"], config["device"]
 
-        # Plain text health report
-        health_text = f"""==================
-PICO W HEALTH CHECK
+        # Minimal HTML health report with clickable links
+        health_html = f"""<!DOCTYPE html><html><head><title>Health Check</title></head><body>
+<h1>PICO W HEALTH CHECK</h1>
 
-Device: {device_name}
-Location: {location}
-Version: {version}
+<h2>Device Information</h2>
+<p><strong>Device:</strong> {device_name}<br>
+<strong>Location:</strong> {location}<br>
+<strong>Version:</strong> {version}</p>
 
-Sensor Status: {"OK" if temp is not None else "FAIL"}
-Temperature: {temp if temp is not None else "ERROR"}C
-Humidity: {hum if hum is not None else "ERROR"}%
-Sensor Pin: GPIO {SENSOR_CONFIG['pin']}
+<h2>Sensor Status</h2>
+<p><strong>Status:</strong> {"OK" if temp is not None else "FAIL"}<br>
+<strong>Temperature:</strong> {temp if temp is not None else "ERROR"}°C<br>
+<strong>Humidity:</strong> {hum if hum is not None else "ERROR"}%<br>
+<strong>Sensor Pin:</strong> GPIO {SENSOR_CONFIG['pin']}</p>
 
-Network: {wifi_status}
-IP Address: {ip_address}
-SSID: {ssid if wlan.isconnected() else "Not connected"}
+<h2>Network Status</h2>
+<p><strong>Network:</strong> {wifi_status}<br>
+<strong>IP Address:</strong> {ip_address}<br>
+<strong>SSID:</strong> {ssid if wlan.isconnected() else "Not connected"}</p>
 
-System Uptime: {uptime_days}d {uptime_hours:02d}:{uptime_minutes:02d}
-Free Memory: {free_memory:,} bytes ({memory_mb}KB)
-OTA Status: {"Enabled" if ota_updater else "Disabled"}
+<h2>System Resources</h2>
+<p><strong>Uptime:</strong> {uptime_days}d {uptime_hours:02d}:{uptime_minutes:02d}<br>
+<strong>Free Memory:</strong> {free_memory:,} bytes ({memory_mb}KB)<br>
+<strong>OTA Status:</strong> {"Enabled" if ota_updater else "Disabled"}</p>
 
-Links: /config /logs /update /metrics
-"""
+<h2>Links</h2>
+<p><a href="/">Dashboard</a> | <a href="/config">Config</a> | <a href="/logs">Logs</a> | <a href="/update">Update</a> | <a href="/metrics">Metrics</a></p>
+</body></html>"""
 
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{health_text}"
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{health_html}"
     except Exception as e:
         log_error(f"Health check failed: {e}", "SYSTEM")
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nHealth check failed: {e}"
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Health Check Failed</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p>"
 
 
 def handle_config_page():
