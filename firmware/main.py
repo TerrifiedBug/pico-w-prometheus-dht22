@@ -285,7 +285,7 @@ def get_system_info():
 
 def handle_update_request():
     """
-    Handle OTA update request with immediate execution.
+    Handle OTA update request with immediate execution - plain text response.
 
     Returns:
         str: HTTP response for update request.
@@ -294,11 +294,11 @@ def handle_update_request():
 
     if not ota_updater:
         log_warn("OTA update requested but OTA not enabled", "OTA")
-        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/html\r\n\r\n<h1>OTA Not Enabled</h1><p>Over-the-air updates are disabled. <a href='/config'>Enable in configuration</a> or <a href='/'>return home</a>.</p>"
+        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nOTA NOT ENABLED\n\nOver-the-air updates are disabled.\nEnable in configuration or return home.\n\nLinks: /config /\n"
 
     if update_in_progress:
         log_info("Update already in progress", "OTA")
-        return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>Update In Progress</h1><p>An update is already running. Device will restart automatically when complete.</p><p><a href='/health?update=true'>Monitor progress</a></p>"
+        return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nUPDATE IN PROGRESS\n\nAn update is already running.\nDevice will restart automatically when complete.\n\nMonitor progress: /health?update=true\n"
 
     try:
         log_info("Manual update requested", "OTA")
@@ -308,7 +308,7 @@ def handle_update_request():
 
         if not has_update:
             log_info("No updates available", "OTA")
-            return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>No Updates Available</h1><p>Current version is up to date.</p><p><a href='/health'>View system status</a> | <a href='/'>Return home</a></p>"
+            return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nNO UPDATES AVAILABLE\n\nCurrent version is up to date.\n\nLinks: /health /\n"
 
         # Get current version for display
         current_version = ota_updater.get_current_version()
@@ -318,60 +318,28 @@ def handle_update_request():
 
         log_info(f"Starting immediate update: {current_version} -> {new_version}", "OTA")
 
-        # Return HTML response with delayed redirect
-        html_response = f"""<!DOCTYPE html>
-<html><head>
-<title>Update Started</title>
-<meta http-equiv="refresh" content="10;url=/health?update=true">
-<style>
-body {{ font-family: Arial, sans-serif; margin: 40px; }}
-.update-info {{ background: #e8f5e8; padding: 20px; border-radius: 5px; margin: 20px 0; }}
-.warning {{ background: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-#countdown {{ font-weight: bold; color: #007bff; }}
-</style>
-</head><body>
-<h1>Update Started Successfully!</h1>
+        # Return plain text response
+        update_response = f"""UPDATE STARTED SUCCESSFULLY
 
-<div class="update-info">
-<h3>Update Details:</h3>
-<p><strong>Current Version:</strong> {current_version}</p>
-<p><strong>Target Version:</strong> {new_version}</p>
-<p><strong>Status:</strong> Downloading and applying update...</p>
-</div>
+Current Version: {current_version}
+Target Version: {new_version}
+Status: Downloading and applying update...
 
-<div class="warning">
-<h3>Important:</h3>
-<p>• Device will restart automatically in 1-2 minutes</p>
-<p>• DO NOT power off the device during update</p>
-<p>• You may lose connection temporarily during restart</p>
-</div>
+IMPORTANT:
+- Device will restart automatically in 1-2 minutes
+- DO NOT power off the device during update
+- You may lose connection temporarily during restart
 
-<p>Redirecting to health monitor in <span id="countdown">10</span> seconds...</p>
-<p><a href="/health?update=true">Click here to monitor progress manually</a></p>
-
-<script>
-let countdown = 10;
-const countdownElement = document.getElementById('countdown');
-
-const timer = setInterval(() => {{
-    countdown--;
-    countdownElement.textContent = countdown;
-
-    if (countdown <= 0) {{
-        clearInterval(timer);
-        window.location.href = '/health?update=true';
-    }}
-}}, 1000);
-</script>
-</body></html>"""
+Monitor progress: /health?update=true
+"""
 
         # Start update in background (will happen after response is sent)
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html_response}"
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{update_response}"
 
     except Exception as e:
         update_in_progress = False
         log_error(f"Update request failed: {e}", "OTA")
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Update Failed</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p>"
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUPDATE FAILED\n\nError: {e}\n\nReturn home: /\n"
 
 
 def perform_immediate_update():
