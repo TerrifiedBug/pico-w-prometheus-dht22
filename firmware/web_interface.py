@@ -65,9 +65,8 @@ def handle_root_page(sensor_data, system_info, ota_updater):
         log_error(f"Root page error: {e}", "HTTP")
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nError: {e}"
 
-
-def handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid):
-    """Handle health check with plain text response."""
+def handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid, request_str=""):
+    """Handle health check with HTML response and update monitoring."""
     try:
         temp, hum = sensor_data
         wifi_status, _, ip_address = system_info["wifi"]
@@ -78,8 +77,161 @@ def handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid):
         config = get_config_for_metrics()
         location, device_name = config["location"], config["device"]
 
-        # Plain text health report
-        health_text = f"""Pico W Health Check
+        # Check if this is an update monitoring request
+        is_update_monitor = "update=true" in request_str
+
+        # Determine if update is in progress (check global variable from main.py)
+        update_status = "unknown"
+        try:
+            # This is a bit of a hack, but we need to check the global state
+            import main
+            update_in_progress = getattr(main, 'update_in_progress', False)
+            if update_in_progress:
+                update_status = "in_progress"
+            else:
+                update_status = "complete" if is_update_monitor else "normal"
+        except:
+            update_status = "normal"
+
+        # Generate appropriate HTML response
+        if is_update_monitor and update_status == "in_progress":
+            # Update in progress - show monitoring page with auto-refresh
+            html_content = f"""<!DOCTYPE html>
+<html><head>
+<title>Update Monitor - {device_name}</title>
+<meta http-equiv="refresh" content="10">
+<style>
+body {{ font-family: Arial, sans-serif; margin: 40px; }}
+.status {{ padding: 20px; border-radius: 5px; margin: 20px 0; }}
+.updating {{ background: #fff3cd; border-left: 5px solid #ffc107; }}
+.info {{ background: #d1ecf1; border-left: 5px solid #17a2b8; }}
+.warning {{ background: #f8d7da; border-left: 5px solid #dc3545; }}
+</style>
+</head><body>
+<h1>Update Monitor - {device_name}</h1>
+
+<div class="status updating">
+<h3>Update In Progress</h3>
+<p><strong>Status:</strong> Device is downloading and applying firmware update</p>
+<p><strong>Current Version:</strong> {version}</p>
+<p><strong>Expected Action:</strong> Device will restart automatically when complete</p>
+</div>
+
+<div class="status info">
+<h3>System Status</h3>
+<p><strong>Network:</strong> {wifi_status} ({ip_address})</p>
+<p><strong>Uptime:</strong> {uptime_days}d {uptime_hours:02d}:{uptime_minutes:02d}</p>
+<p><strong>Memory:</strong> {memory_mb}KB free</p>
+</div>
+
+<div class="status warning">
+<h3>Please Wait</h3>
+<p>• Update is in progress - device will restart shortly</p>
+<p>• This page refreshes every 10 seconds</p>
+<p>• You may lose connection temporarily during restart</p>
+<p>• After restart, this page will show the new version</p>
+</div>
+
+<p><strong>Auto-refresh:</strong> This page will refresh automatically every 10 seconds</p>
+<p><a href="/logs">View logs</a> | <a href="/">Return home</a></p>
+</body></html>"""
+
+        elif is_update_monitor and update_status == "complete":
+            # Update completed - show success page
+            html_content = f"""<!DOCTYPE html>
+<html><head>
+<title>Update Complete - {device_name}</title>
+<style>
+body {{ font-family: Arial, sans-serif; margin: 40px; }}
+.status {{ padding: 20px; border-radius: 5px; margin: 20px 0; }}
+.success {{ background: #d4edda; border-left: 5px solid #28a745; }}
+.info {{ background: #d1ecf1; border-left: 5px solid #17a2b8; }}
+</style>
+</head><body>
+<h1>Update Complete - {device_name}</h1>
+
+<div class="status success">
+<h3>Update Successful!</h3>
+<p><strong>Current Version:</strong> {version}</p>
+<p><strong>Status:</strong> Device is running normally with new firmware</p>
+<p><strong>Update Time:</strong> Just completed</p>
+</div>
+
+<div class="status info">
+<h3>System Health</h3>
+<p><strong>Sensor:</strong> {"OK" if temp is not None else "FAIL"} - {temp if temp is not None else "ERROR"}°C, {hum if hum is not None else "ERROR"}%</p>
+<p><strong>Network:</strong> {wifi_status} ({ip_address})</p>
+<p><strong>Uptime:</strong> {uptime_days}d {uptime_hours:02d}:{uptime_minutes:02d}</p>
+<p><strong>Memory:</strong> {memory_mb}KB free</p>
+<p><strong>OTA:</strong> {"Enabled" if ota_updater else "Disabled"}</p>
+</div>
+
+<p><a href="/config">Configuration</a> | <a href="/logs">View logs</a> | <a href="/update">Check for updates</a> | <a href="/">Dashboard</a></p>
+</body></html>"""
+
+        else:
+            # Normal health check - comprehensive HTML report
+            html_content = f"""<!DOCTYPE html>
+<html><head>
+<title>Health Check - {device_name}</title>
+<style>
+body {{ font-family: Arial, sans-serif; margin: 40px; }}
+.status {{ padding: 15px; border-radius: 5px; margin: 15px 0; }}
+.ok {{ background: #d4edda; border-left: 5px solid #28a745; }}
+.warn {{ background: #fff3cd; border-left: 5px solid #ffc107; }}
+.error {{ background: #f8d7da; border-left: 5px solid #dc3545; }}
+.info {{ background: #d1ecf1; border-left: 5px solid #17a2b8; }}
+table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }}
+th {{ background-color: #f8f9fa; }}
+</style>
+</head><body>
+<h1>System Health Check</h1>
+
+<div class="status info">
+<h3>Device Information</h3>
+<p><strong>Device:</strong> {device_name} | <strong>Location:</strong> {location}</p>
+<p><strong>Firmware Version:</strong> {version}</p>
+</div>
+
+<div class="status {"ok" if temp is not None else "error"}">
+<h3>Sensor Status</h3>
+<p><strong>DHT22 Sensor:</strong> {"OK" if temp is not None else "FAIL"}</p>
+<p><strong>Temperature:</strong> {temp if temp is not None else "ERROR"}°C</p>
+<p><strong>Humidity:</strong> {hum if hum is not None else "ERROR"}%</p>
+<p><strong>Sensor Pin:</strong> GPIO {SENSOR_CONFIG['pin']}</p>
+</div>
+
+<div class="status {"ok" if wifi_status == "Connected" else "error"}">
+<h3>Network Status</h3>
+<p><strong>WiFi:</strong> {wifi_status}</p>
+<p><strong>IP Address:</strong> {ip_address}</p>
+<p><strong>SSID:</strong> {ssid if wlan.isconnected() else "Not connected"}</p>
+</div>
+
+<div class="status {"ok" if memory_mb > 100 else "warn" if memory_mb > 50 else "error"}">
+<h3>System Resources</h3>
+<p><strong>Uptime:</strong> {uptime_days} days, {uptime_hours:02d}:{uptime_minutes:02d}</p>
+<p><strong>Free Memory:</strong> {free_memory:,} bytes ({memory_mb}KB)</p>
+<p><strong>OTA Updates:</strong> {"Enabled" if ota_updater else "Disabled"}</p>
+</div>
+
+<h3>Quick Actions</h3>
+<p>
+<a href="/config">Configuration</a> |
+<a href="/logs">View Logs</a> |
+<a href="/update">Check Updates</a> |
+<a href="/metrics">Metrics</a> |
+<a href="/">Dashboard</a>
+</p>
+
+</body></html>"""
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html_content}"
+
+    except Exception as e:
+        log_error(f"Health check failed: {e}", "SYSTEM")
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Health Check Failed</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p>"
 ==================
 
 Device: {device_name}

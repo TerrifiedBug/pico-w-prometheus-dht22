@@ -294,11 +294,11 @@ def handle_update_request():
 
     if not ota_updater:
         log_warn("OTA update requested but OTA not enabled", "OTA")
-        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nOTA not enabled"
+        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/html\r\n\r\n<h1>OTA Not Enabled</h1><p>Over-the-air updates are disabled. <a href='/config'>Enable in configuration</a> or <a href='/'>return home</a>.</p>"
 
     if update_in_progress:
         log_info("Update already in progress", "OTA")
-        return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nUpdate already in progress\n\nDevice will restart automatically when complete."
+        return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>Update In Progress</h1><p>An update is already running. Device will restart automatically when complete.</p><p><a href='/health?update=true'>Monitor progress</a></p>"
 
     try:
         log_info("Manual update requested", "OTA")
@@ -308,7 +308,7 @@ def handle_update_request():
 
         if not has_update:
             log_info("No updates available", "OTA")
-            return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nNo updates available\n\nCurrent version is up to date."
+            return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>No Updates Available</h1><p>Current version is up to date.</p><p><a href='/health'>View system status</a> | <a href='/'>Return home</a></p>"
 
         # Get current version for display
         current_version = ota_updater.get_current_version()
@@ -318,27 +318,60 @@ def handle_update_request():
 
         log_info(f"Starting immediate update: {current_version} -> {new_version}", "OTA")
 
-        # Return simple response and start update
-        response_text = f"""Update Started Successfully!
+        # Return HTML response with delayed redirect
+        html_response = f"""<!DOCTYPE html>
+<html><head>
+<title>Update Started</title>
+<meta http-equiv="refresh" content="10;url=/health?update=true">
+<style>
+body {{ font-family: Arial, sans-serif; margin: 40px; }}
+.update-info {{ background: #e8f5e8; padding: 20px; border-radius: 5px; margin: 20px 0; }}
+.warning {{ background: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+#countdown {{ font-weight: bold; color: #007bff; }}
+</style>
+</head><body>
+<h1>Update Started Successfully!</h1>
 
-Current Version: {current_version}
-Target Version: {new_version}
+<div class="update-info">
+<h3>Update Details:</h3>
+<p><strong>Current Version:</strong> {current_version}</p>
+<p><strong>Target Version:</strong> {new_version}</p>
+<p><strong>Status:</strong> Downloading and applying update...</p>
+</div>
 
-The update is now running in the background.
-Device will restart automatically in 1-2 minutes.
+<div class="warning">
+<h3>Important:</h3>
+<p>• Device will restart automatically in 1-2 minutes</p>
+<p>• DO NOT power off the device during update</p>
+<p>• You may lose connection temporarily during restart</p>
+</div>
 
-After restart, visit /health to confirm the new version.
+<p>Redirecting to health monitor in <span id="countdown">10</span> seconds...</p>
+<p><a href="/health?update=true">Click here to monitor progress manually</a></p>
 
-DO NOT power off the device during update!
-"""
+<script>
+let countdown = 10;
+const countdownElement = document.getElementById('countdown');
+
+const timer = setInterval(() => {{
+    countdown--;
+    countdownElement.textContent = countdown;
+
+    if (countdown <= 0) {{
+        clearInterval(timer);
+        window.location.href = '/health?update=true';
+    }}
+}}, 1000);
+</script>
+</body></html>"""
 
         # Start update in background (will happen after response is sent)
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{response_text}"
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html_response}"
 
     except Exception as e:
         update_in_progress = False
         log_error(f"Update request failed: {e}", "OTA")
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate failed: {e}"
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Update Failed</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p>"
 
 
 def perform_immediate_update():
@@ -450,7 +483,7 @@ def handle_request(cl, request):
             # Health check endpoint
             sensor_data = read_dht22()
             system_info = get_system_info()
-            response = handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid)
+            response = handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid, request_str)
             cl.send(response)
 
         elif method == "GET" and path == "/config":
