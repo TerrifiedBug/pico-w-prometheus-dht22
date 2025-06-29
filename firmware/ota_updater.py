@@ -297,11 +297,97 @@ class GitHubOTAUpdater:
             log_error(f"Download failed: {e}", "OTA")
             return False
 
+    def create_backup(self, files_to_backup):
+        """Create backup of critical files before update."""
+        try:
+            log_info("Creating backup of current files", "OTA")
+            backup_count = 0
+
+            for filename in files_to_backup:
+                try:
+                    # Check if original file exists
+                    os.stat(filename)
+
+                    # Create backup
+                    backup_name = f"{filename}.bak"
+
+                    # Read original file
+                    with open(filename, "r") as src:
+                        content = src.read()
+
+                    # Write backup
+                    with open(backup_name, "w") as dst:
+                        dst.write(content)
+
+                    backup_count += 1
+                    log_info(f"Backed up {filename}", "OTA")
+
+                except OSError:
+                    log_warn(f"Could not backup {filename} (file not found)", "OTA")
+
+            log_info(f"Created {backup_count} backup files", "OTA")
+            return backup_count > 0
+
+        except Exception as e:
+            log_error(f"Backup creation failed: {e}", "OTA")
+            return False
+
+    def validate_update_files(self):
+        """Validate that downloaded files can be imported."""
+        try:
+            log_info("Validating downloaded files", "OTA")
+
+            # Test critical files for basic syntax
+            critical_files = ["main.py", "web_interface.py", "config.py"]
+
+            for filename in critical_files:
+                temp_path = f"{self.temp_dir}/{filename}"
+                try:
+                    os.stat(temp_path)
+
+                    # Basic validation - check file is not empty and not HTML error page
+                    with open(temp_path, "r") as f:
+                        content = f.read()
+
+                    if len(content) < 100:  # Too small
+                        log_error(f"{filename} too small ({len(content)} bytes)", "OTA")
+                        return False
+
+                    if content.strip().startswith('<!DOCTYPE html>'):
+                        log_error(f"{filename} is HTML error page", "OTA")
+                        return False
+
+                    if filename.endswith('.py') and 'import' not in content:
+                        log_error(f"{filename} missing imports", "OTA")
+                        return False
+
+                    log_info(f"Validated {filename} ({len(content)} bytes)", "OTA")
+
+                except OSError:
+                    log_warn(f"Could not validate {filename}", "OTA")
+
+            log_info("File validation completed", "OTA")
+            return True
+
+        except Exception as e:
+            log_error(f"Validation failed: {e}", "OTA")
+            return False
+
     def apply_update(self, version):
         try:
             log_info(f"Applying update to {version}", "OTA")
 
-            # Move temp files to main location (no backup - direct overwrite)
+            # Step 1: Create backups of existing files
+            if not self.create_backup(self.update_files):
+                log_warn("Backup creation failed, proceeding anyway", "OTA")
+
+            # Step 2: Validate downloaded files
+            if not self.validate_update_files():
+                log_error("File validation failed, aborting update", "OTA")
+                return False
+
+            # Step 3: Apply updates with error handling
+            updated_files = []
             for filename in self.update_files:
                 temp_path = f"{self.temp_dir}/{filename}"
                 try:
@@ -313,14 +399,20 @@ class GitHubOTAUpdater:
                     with open(filename, "w") as dst:
                         dst.write(content)
 
+                    updated_files.append(filename)
                     log_info(f"Updated {filename}", "OTA")
                 except OSError:
                     log_warn(f"Skipping missing {filename}", "OTA")
 
-            # Update version
-            self.set_current_version(version)
+            # Step 4: Update version only if files were updated
+            if updated_files:
+                self.set_current_version(version)
+                log_info(f"Updated {len(updated_files)} files to version {version}", "OTA")
+            else:
+                log_error("No files were updated", "OTA")
+                return False
 
-            # Clean temp directory
+            # Step 5: Clean temp directory
             try:
                 for filename in os.listdir(self.temp_dir):
                     filepath = f"{self.temp_dir}/{filename}"
@@ -328,11 +420,47 @@ class GitHubOTAUpdater:
             except OSError:
                 pass
 
-            log_info(f"Update to {version} completed", "OTA")
+            log_info(f"Update to {version} completed successfully", "OTA")
             return True
 
         except Exception as e:
             log_error(f"Apply failed: {e}", "OTA")
+            return False
+
+    def rollback_update(self):
+        """Rollback to backup files if available."""
+        try:
+            log_info("Rolling back to backup files", "OTA")
+            rollback_count = 0
+
+            # Find and restore backup files
+            for filename in os.listdir():
+                if filename.endswith('.bak'):
+                    original_name = filename[:-4]  # Remove .bak extension
+                    try:
+                        # Read backup content
+                        with open(filename, "r") as src:
+                            content = src.read()
+
+                        # Restore original file
+                        with open(original_name, "w") as dst:
+                            dst.write(content)
+
+                        rollback_count += 1
+                        log_info(f"Restored {original_name} from backup", "OTA")
+
+                    except Exception as e:
+                        log_error(f"Failed to restore {original_name}: {e}", "OTA")
+
+            if rollback_count > 0:
+                log_info(f"Rollback completed: restored {rollback_count} files", "OTA")
+                return True
+            else:
+                log_warn("No backup files found for rollback", "OTA")
+                return False
+
+        except Exception as e:
+            log_error(f"Rollback failed: {e}", "OTA")
             return False
 
     def perform_update(self):

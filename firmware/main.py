@@ -8,34 +8,64 @@ This module connects to WiFi, reads from a DHT22 sensor, and serves metrics
 via an HTTP endpoint for Prometheus scraping.
 """
 
-import socket
+# BOOT PROTECTION: WiFi setup first, before any other imports
+import network
 import time
 from secrets import secrets
 
-import dht
-import network
-import rp2
-from machine import Pin
-import gc
+# Initialize WiFi immediately for recovery access
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
 
-from config import (
-    METRIC_NAMES,
-    METRICS_ENDPOINT,
-    SENSOR_CONFIG,
-    SERVER_CONFIG,
-    WIFI_CONFIG,
-)
-from device_config import get_config_for_metrics
-from logger import log_info, log_warn, log_error, log_debug
+# BOOT PROTECTION: Try to import all modules with fallback to recovery mode
+try:
+    import socket
+    import dht
+    import rp2
+    from machine import Pin
+    import gc
 
-# Import web interface functions
-from web_interface import (
-    handle_root_page,
-    handle_health_check,
-    handle_config_page,
-    handle_config_update,
-    handle_logs_page,
-)
+    from config import (
+        METRIC_NAMES,
+        METRICS_ENDPOINT,
+        SENSOR_CONFIG,
+        SERVER_CONFIG,
+        WIFI_CONFIG,
+    )
+    from device_config import get_config_for_metrics
+    from logger import log_info, log_warn, log_error, log_debug
+
+    # Import web interface functions
+    from web_interface import (
+        handle_root_page,
+        handle_health_check,
+        handle_config_page,
+        handle_config_update,
+        handle_logs_page,
+    )
+
+    print("BOOT: All modules loaded successfully")
+    RECOVERY_MODE = False
+
+except ImportError as e:
+    print(f"BOOT FAILURE: Module import failed: {e}")
+    print("ACTIVATING RECOVERY MODE...")
+    RECOVERY_MODE = True
+
+    # Execute recovery mode
+    exec(open('recovery.py').read())
+    # Recovery mode runs its own server loop, so we exit here
+    exit()
+
+except Exception as e:
+    print(f"BOOT FAILURE: Unexpected error: {e}")
+    print("ACTIVATING RECOVERY MODE...")
+    RECOVERY_MODE = True
+
+    # Execute recovery mode
+    exec(open('recovery.py').read())
+    # Recovery mode runs its own server loop, so we exit here
+    exit()
 
 # Record boot time using ticks for accurate uptime calculation
 boot_ticks = time.ticks_ms()
@@ -98,9 +128,6 @@ def connect_wifi():
     log_error("WiFi connection timeout", "NETWORK")
     return False
 
-
-wlan = network.WLAN(network.STA_IF)
-wlan.active(True)
 
 # Connect with improved reliability
 if not connect_wifi():
