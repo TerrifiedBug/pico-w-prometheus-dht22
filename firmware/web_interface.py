@@ -5,7 +5,6 @@ Ultra-lightweight implementation to maximize memory for OTA updates.
 
 import time
 import gc
-from urllib.parse import unquote_plus
 from logger import log_info, log_warn, log_error, log_debug, get_logger
 from device_config import (
     load_device_config,
@@ -14,6 +13,27 @@ from device_config import (
     get_config_for_metrics,
 )
 from config import SENSOR_CONFIG, WIFI_CONFIG, SERVER_CONFIG, METRICS_ENDPOINT
+
+
+def unquote_plus(string):
+    """MicroPython-compatible URL decoding function."""
+    # Replace + with spaces
+    string = string.replace('+', ' ')
+
+    # Basic URL decoding for common characters
+    replacements = {
+        '%20': ' ', '%21': '!', '%22': '"', '%23': '#', '%24': '$', '%25': '%',
+        '%26': '&', '%27': "'", '%28': '(', '%29': ')', '%2A': '*', '%2B': '+',
+        '%2C': ',', '%2D': '-', '%2E': '.', '%2F': '/', '%3A': ':', '%3B': ';',
+        '%3C': '<', '%3D': '=', '%3E': '>', '%3F': '?', '%40': '@', '%5B': '[',
+        '%5C': '\\', '%5D': ']', '%5E': '^', '%5F': '_', '%60': '`', '%7B': '{',
+        '%7C': '|', '%7D': '}', '%7E': '~'
+    }
+
+    for encoded, decoded in replacements.items():
+        string = string.replace(encoded, decoded)
+
+    return string
 
 
 def handle_root_page(sensor_data, system_info, ota_updater):
