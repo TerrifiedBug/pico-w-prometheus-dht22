@@ -65,6 +65,7 @@ def handle_root_page(sensor_data, system_info, ota_updater):
         log_error(f"Root page error: {e}", "HTTP")
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nError: {e}"
 
+
 def handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid, request_str=""):
     """Handle health check with HTML response and update monitoring."""
     try:
@@ -232,32 +233,6 @@ th {{ background-color: #f8f9fa; }}
     except Exception as e:
         log_error(f"Health check failed: {e}", "SYSTEM")
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Health Check Failed</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p>"
-==================
-
-Device: {device_name}
-Location: {location}
-Version: {version}
-
-Sensor Status: {"OK" if temp is not None else "FAIL"}
-Temperature: {temp if temp is not None else "ERROR"}C
-Humidity: {hum if hum is not None else "ERROR"}%
-Sensor Pin: GPIO {SENSOR_CONFIG['pin']}
-
-Network: {wifi_status}
-IP Address: {ip_address}
-SSID: {ssid if wlan.isconnected() else "Not connected"}
-
-System Uptime: {uptime_days}d {uptime_hours:02d}:{uptime_minutes:02d}
-Free Memory: {free_memory:,} bytes ({memory_mb}KB)
-OTA Status: {"Enabled" if ota_updater else "Disabled"}
-
-Links: /config /logs /update /metrics
-"""
-
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{health_text}"
-    except Exception as e:
-        log_error(f"Health check failed: {e}", "SYSTEM")
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nHealth check failed: {e}"
 
 
 def handle_config_page():
