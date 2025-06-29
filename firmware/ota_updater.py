@@ -331,8 +331,13 @@ class GitHubOTAUpdater:
 
                 gc.collect()
                 if not self.download_file(filename, self.temp_dir):
-                    log_error(f"Failed to download {filename}", "OTA")
-                    return False
+                    # version.txt is optional since we use Git tags for versioning
+                    if filename == "version.txt":
+                        log_warn(f"Skipping optional file {filename}", "OTA")
+                        continue
+                    else:
+                        log_error(f"Failed to download {filename}", "OTA")
+                        return False
 
                 log_info(f"Downloaded {filename} ({i}/{len(files_to_download)})", "OTA")
                 time.sleep(0.5)  # Brief delay
