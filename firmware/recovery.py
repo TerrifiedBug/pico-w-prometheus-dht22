@@ -91,7 +91,7 @@ def recovery_server():
                 pass
 
 def handle_firmware_download():
-    """Download fresh firmware from GitHub."""
+    """Download fresh firmware from GitHub - dynamically discovers all firmware files."""
     try:
         print("RECOVERY: Downloading firmware...")
 
@@ -106,13 +106,42 @@ def handle_firmware_download():
             branch = 'main'
             print("RECOVERY: Using default branch: main")
 
-        # Ultra-minimal download - just the essential files
         import urequests
 
-        files = ["main.py", "web_interface.py", "ota_updater.py", "device_config.py", "logger.py", "config.py"]
-        base_url = f"https://raw.githubusercontent.com/TerrifiedBug/pico-w-prometheus-dht22/{branch}/firmware/"
+        # Step 1: Discover all firmware files using GitHub API
+        print("RECOVERY: Discovering firmware files...")
+        contents_url = f"https://api.github.com/repos/TerrifiedBug/pico-w-prometheus-dht22/contents/firmware?ref={branch}"
 
+        try:
+            response = urequests.get(contents_url)
+            if response.status_code != 200:
+                print(f"RECOVERY: API request failed: {response.status_code}")
+                response.close()
+                # Fallback to essential files
+                files = ["main.py", "web_interface.py", "ota_updater.py", "device_config.py", "logger.py", "config.py", "recovery.py", "version.txt"]
+            else:
+                contents_data = response.json()
+                response.close()
+
+                # Extract all firmware files (exclude secrets.py)
+                files = []
+                for item in contents_data:
+                    if item["type"] == "file":
+                        filename = item["name"]
+                        if (filename.endswith(".py") or filename == "version.txt") and filename != "secrets.py":
+                            files.append(filename)
+
+                print(f"RECOVERY: Discovered {len(files)} files: {files}")
+        except Exception as e:
+            print(f"RECOVERY: File discovery failed: {e}")
+            # Fallback to essential files
+            files = ["main.py", "web_interface.py", "ota_updater.py", "device_config.py", "logger.py", "config.py", "recovery.py", "version.txt"]
+
+        # Step 2: Download all discovered files
+        base_url = f"https://raw.githubusercontent.com/TerrifiedBug/pico-w-prometheus-dht22/{branch}/firmware/"
         success_count = 0
+        failed_files = []
+
         for filename in files:
             try:
                 print(f"RECOVERY: Downloading {filename}")
@@ -122,14 +151,22 @@ def handle_firmware_download():
                         f.write(response.text)
                     success_count += 1
                     print(f"RECOVERY: Downloaded {filename}")
+                else:
+                    failed_files.append(f"{filename} (HTTP {response.status_code})")
                 response.close()
             except Exception as e:
+                failed_files.append(f"{filename} ({e})")
                 print(f"RECOVERY: Failed to download {filename}: {e}")
 
+        # Step 3: Report results
         if success_count > 0:
-            return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>Recovery Complete</h1><p>Downloaded {success_count}/{len(files)} files from {branch} branch. <a href='/'>Restart device</a> to apply changes.</p>"
+            result_msg = f"Downloaded {success_count}/{len(files)} files from {branch} branch."
+            if failed_files:
+                result_msg += f" Failed: {', '.join(failed_files[:3])}" + ("..." if len(failed_files) > 3 else "")
+
+            return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>Recovery Complete</h1><p>{result_msg}</p><p><a href='/'>Restart device</a> to apply changes.</p>"
         else:
-            return "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Download Failed</h1><p>Could not download firmware files.</p>"
+            return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Download Failed</h1><p>Could not download any firmware files. Errors: {', '.join(failed_files[:5])}</p>"
 
     except Exception as e:
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Error</h1><p>Recovery failed: {e}</p>"
