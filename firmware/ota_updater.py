@@ -404,9 +404,11 @@ class GitHubOTAUpdater:
                         log_error(f"{filename} is HTML error page", "OTA")
                         return False
 
-                    if filename.endswith('.py') and 'import' not in content:
-                        log_error(f"{filename} missing imports", "OTA")
-                        return False
+                    # Check for imports, but exclude configuration files that don't need them
+                    if filename.endswith('.py') and filename not in ['config.py', 'secrets.py']:
+                        if 'import' not in content:
+                            log_error(f"{filename} missing imports", "OTA")
+                            return False
 
                     log_info(f"Validated {filename} ({len(content)} bytes)", "OTA")
 
