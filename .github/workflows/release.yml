@@ -32,7 +32,7 @@ jobs:
       - name: Determine release type
         id: release_type
         run: |
-          if [[ "${{ steps.version.outputs.version }}" == dev-* ]]; then
+          if [[ "${{ steps.version.outputs.version }}" == dev-* ]] || [[ "${{ steps.version.outputs.version }}" == *-dev ]]; then
             echo "prerelease=true" >> $GITHUB_OUTPUT
             echo "release_name=Development Release ${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
             echo "This is a development release"
