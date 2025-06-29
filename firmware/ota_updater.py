@@ -15,10 +15,23 @@ class GitHubOTAUpdater:
     def __init__(self):
         log_info("Initializing minimal OTA updater", "OTA")
 
-        # Hardcoded configuration for minimal size
-        self.repo_owner = "TerrifiedBug"
-        self.repo_name = "pico-w-prometheus-dht22"
-        self.branch = "main"
+        # Load configuration from device config instead of hardcoding
+        try:
+            from device_config import get_ota_config
+            ota_config = get_ota_config()
+            github_repo = ota_config.get("github_repo", {})
+
+            self.repo_owner = github_repo.get("owner", "TerrifiedBug")
+            self.repo_name = github_repo.get("name", "pico-w-prometheus-dht22")
+            self.branch = github_repo.get("branch", "main")
+
+            log_info(f"OTA config loaded: {self.repo_owner}/{self.repo_name} (branch: {self.branch})", "OTA")
+        except Exception as e:
+            # Fallback to hardcoded values if config fails
+            log_warn(f"Failed to load OTA config, using defaults: {e}", "OTA")
+            self.repo_owner = "TerrifiedBug"
+            self.repo_name = "pico-w-prometheus-dht22"
+            self.branch = "main"
 
         # GitHub URLs
         self.api_base = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}"
@@ -34,7 +47,7 @@ class GitHubOTAUpdater:
         except OSError:
             pass
 
-        log_info(f"Minimal OTA ready: {self.repo_owner}/{self.repo_name}", "OTA")
+        log_info(f"Minimal OTA ready: {self.repo_owner}/{self.repo_name} (branch: {self.branch})", "OTA")
 
     def get_current_version(self):
         try:
@@ -95,7 +108,16 @@ class GitHubOTAUpdater:
             log_info("Checking for updates", "OTA")
             current_version = self.get_current_version()
 
-            url = f"{self.api_base}/releases/latest"
+            # Determine release channel based on branch
+            if self.branch == "dev":
+                # For dev branch, look for pre-releases (dev releases)
+                url = f"{self.api_base}/releases"
+                log_info("Checking for dev releases (pre-releases)", "OTA")
+            else:
+                # For main branch, use latest stable release
+                url = f"{self.api_base}/releases/latest"
+                log_info("Checking for stable releases", "OTA")
+
             success, response_or_error = self._make_request(url)
 
             if not success:
@@ -103,14 +125,37 @@ class GitHubOTAUpdater:
                 return False, None, None
 
             try:
-                release_data = response_or_error.json()
-                response_or_error.close()
+                if self.branch == "dev":
+                    # Parse releases list and find latest pre-release
+                    releases_data = response_or_error.json()
+                    response_or_error.close()
+
+                    # Find the latest pre-release
+                    latest_prerelease = None
+                    for release in releases_data:
+                        if release.get("prerelease", False):
+                            latest_prerelease = release
+                            break  # Releases are ordered by date, so first pre-release is latest
+
+                    if not latest_prerelease:
+                        log_info("No dev releases found", "OTA")
+                        return False, None, None
+
+                    release_data = latest_prerelease
+                    latest_version = release_data["tag_name"]
+                    log_info(f"Found latest dev release: {latest_version}", "OTA")
+                else:
+                    # Parse single latest release
+                    release_data = response_or_error.json()
+                    response_or_error.close()
+                    latest_version = release_data["tag_name"]
+                    log_info(f"Found latest stable release: {latest_version}", "OTA")
+
             except Exception as e:
                 log_error(f"JSON parse failed: {e}", "OTA")
                 response_or_error.close()
                 return False, None, None
 
-            latest_version = release_data["tag_name"]
             has_update = latest_version != current_version
 
             if has_update:

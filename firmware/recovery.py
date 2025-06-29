@@ -95,11 +95,22 @@ def handle_firmware_download():
     try:
         print("RECOVERY: Downloading firmware...")
 
+        # Try to get branch from config, fallback to main
+        try:
+            import ujson
+            with open('device_config.json', 'r') as f:
+                config = ujson.load(f)
+            branch = config.get('ota', {}).get('github_repo', {}).get('branch', 'main')
+            print(f"RECOVERY: Using branch: {branch}")
+        except:
+            branch = 'main'
+            print("RECOVERY: Using default branch: main")
+
         # Ultra-minimal download - just the essential files
         import urequests
 
         files = ["main.py", "web_interface.py", "ota_updater.py", "device_config.py", "logger.py", "config.py"]
-        base_url = "https://raw.githubusercontent.com/TerrifiedBug/pico-w-prometheus-dht22/main/firmware/"
+        base_url = f"https://raw.githubusercontent.com/TerrifiedBug/pico-w-prometheus-dht22/{branch}/firmware/"
 
         success_count = 0
         for filename in files:
@@ -116,7 +127,7 @@ def handle_firmware_download():
                 print(f"RECOVERY: Failed to download {filename}: {e}")
 
         if success_count > 0:
-            return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>Recovery Complete</h1><p>Downloaded {success_count}/{len(files)} files. <a href='/'>Restart device</a> to apply changes.</p>"
+            return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>Recovery Complete</h1><p>Downloaded {success_count}/{len(files)} files from {branch} branch. <a href='/'>Restart device</a> to apply changes.</p>"
         else:
             return "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Download Failed</h1><p>Could not download firmware files.</p>"
 
