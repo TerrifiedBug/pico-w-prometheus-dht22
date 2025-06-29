@@ -110,8 +110,8 @@ class GitHubOTAUpdater:
 
             # Determine release channel based on branch
             if self.branch == "dev":
-                # For dev branch, look for pre-releases (dev releases)
-                url = f"{self.api_base}/releases"
+                # For dev branch, get only the latest release and check if it's a pre-release
+                url = f"{self.api_base}/releases?per_page=1"
                 log_info("Checking for dev releases (pre-releases)", "OTA")
             else:
                 # For main branch, use latest stable release
@@ -126,22 +126,24 @@ class GitHubOTAUpdater:
 
             try:
                 if self.branch == "dev":
-                    # Parse releases list and find latest pre-release
+                    # Parse releases list (only 1 release due to per_page=1)
                     releases_data = response_or_error.json()
                     response_or_error.close()
 
-                    # Find the latest pre-release
-                    latest_prerelease = None
-                    for release in releases_data:
-                        if release.get("prerelease", False):
-                            latest_prerelease = release
-                            break  # Releases are ordered by date, so first pre-release is latest
-
-                    if not latest_prerelease:
-                        log_info("No dev releases found", "OTA")
+                    # Check if we got any releases
+                    if not releases_data or len(releases_data) == 0:
+                        log_info("No releases found", "OTA")
                         return False, None, None
 
-                    release_data = latest_prerelease
+                    # Get the first (and only) release
+                    latest_release = releases_data[0]
+
+                    # Check if it's a pre-release (dev release)
+                    if not latest_release.get("prerelease", False):
+                        log_info("Latest release is not a dev release", "OTA")
+                        return False, None, None
+
+                    release_data = latest_release
                     latest_version = release_data["tag_name"]
                     log_info(f"Found latest dev release: {latest_version}", "OTA")
                 else:
