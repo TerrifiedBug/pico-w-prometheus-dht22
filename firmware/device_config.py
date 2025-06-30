@@ -57,7 +57,19 @@ def load_device_config():
         # Ensure nested OTA keys exist
         for key in DEFAULT_CONFIG["ota"]:
             if key not in config["ota"]:
-                config["ota"][key] = DEFAULT_CONFIG["ota"][key]
+                if key == "github_repo":
+                    # Handle nested github_repo structure carefully
+                    config["ota"][key] = {}
+                    for repo_key in DEFAULT_CONFIG["ota"]["github_repo"]:
+                        config["ota"][key][repo_key] = DEFAULT_CONFIG["ota"]["github_repo"][repo_key]
+                else:
+                    config["ota"][key] = DEFAULT_CONFIG["ota"][key]
+
+        # Ensure github_repo nested keys exist without overwriting existing values
+        if "github_repo" in config["ota"]:
+            for repo_key in DEFAULT_CONFIG["ota"]["github_repo"]:
+                if repo_key not in config["ota"]["github_repo"]:
+                    config["ota"]["github_repo"][repo_key] = DEFAULT_CONFIG["ota"]["github_repo"][repo_key]
 
         print(f"Device config loaded: {config['device']['location']}/{config['device']['name']}")
         return config
