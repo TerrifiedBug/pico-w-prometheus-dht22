@@ -106,10 +106,6 @@ def save_device_config(config):
         # Atomic write with temporary file
         temp_file = 'device_config.json.tmp'
 
-        # Debug: Print what we're about to save
-        branch_to_save = config.get("ota", {}).get("github_repo", {}).get("branch", "unknown")
-        print(f"DEBUG: About to save config with branch='{branch_to_save}'")
-
         with open(temp_file, 'w') as f:
             json.dump(config, f)
 
@@ -219,12 +215,7 @@ def validate_config_input(form_data):
     if "branch" in form_data:
         branch = form_data.get("branch", "").strip()
         if branch:
-            print(f"DEBUG: Setting branch from '{ota_config['github_repo']['branch']}' to '{branch}'")
             ota_config["github_repo"]["branch"] = branch
-        else:
-            print(f"DEBUG: Branch field empty, keeping '{ota_config['github_repo']['branch']}'")
-    else:
-        print(f"DEBUG: No branch field in form_data, keeping '{ota_config['github_repo']['branch']}'")
 
     return {
         "device": device_config,
