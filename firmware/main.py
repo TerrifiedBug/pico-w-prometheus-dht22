@@ -600,7 +600,32 @@ def run_server():
             # Handle request
             try:
                 cl.settimeout(10.0)  # 10 second timeout for client operations
-                request = cl.recv(1024)
+
+                # Read request with larger buffer for form data
+                request = cl.recv(2048)  # Increased from 1024 to 2048 bytes
+
+                # For POST requests, we might need to read more data
+                if request and b'POST' in request and b'Content-Length:' in request:
+                    try:
+                        # Extract Content-Length header
+                        request_str = request.decode('utf-8')
+                        for line in request_str.split('\r\n'):
+                            if line.lower().startswith('content-length:'):
+                                content_length = int(line.split(':')[1].strip())
+
+                                # Check if we need to read more data
+                                body_start = request_str.find('\r\n\r\n')
+                                if body_start != -1:
+                                    current_body_length = len(request) - (body_start + 4)
+                                    if current_body_length < content_length:
+                                        # Read remaining data
+                                        remaining = content_length - current_body_length
+                                        additional_data = cl.recv(remaining)
+                                        request += additional_data
+                                break
+                    except:
+                        pass  # If parsing fails, use what we have
+
                 if request:
                     handle_request(cl, request)
             except Exception as e:
