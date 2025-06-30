@@ -57,7 +57,7 @@ def handle_root_page(sensor_data, system_info, ota_updater):
 <p>Network: {wifi_status} | IP: {ip_address}</p>
 <p>Uptime: {uptime_hours:02d}:{uptime_minutes:02d} | Memory: {memory_mb}KB</p>
 <h2>Links</h2>
-<p><a href="/health">Health</a> | <a href="/config">Config</a> | <a href="/logs">Logs</a> | <a href="/update">Update</a> | <a href="/metrics">Metrics</a></p>
+<p><a href="/health">Health</a> | <a href="/config">Config</a> | <a href="/logs">Logs</a> | <a href="/update">Update</a> | <a href="/metrics">Metrics</a> | <a href="/reboot">Reboot</a></p>
 </body></html>"""
 
         return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{html}"
@@ -104,7 +104,7 @@ def handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid, reque
 <strong>OTA Status:</strong> {"Enabled" if ota_updater else "Disabled"}</p>
 
 <h2>Links</h2>
-<p><a href="/">Dashboard</a> | <a href="/config">Config</a> | <a href="/logs">Logs</a> | <a href="/update">Update</a> | <a href="/metrics">Metrics</a></p>
+<p><a href="/">Dashboard</a> | <a href="/config">Config</a> | <a href="/logs">Logs</a> | <a href="/update">Update</a> | <a href="/metrics">Metrics</a> | <a href="/reboot">Reboot</a></p>
 </body></html>"""
 
         return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{health_html}"

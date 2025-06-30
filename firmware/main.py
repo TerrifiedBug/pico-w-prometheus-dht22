@@ -349,6 +349,55 @@ def handle_update_request():
         return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>Update Failed</title></head><body><h1>UPDATE FAILED</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p></body></html>"
 
 
+def handle_reboot_request():
+    """
+    Handle manual reboot request with confirmation page.
+
+    Returns:
+        str: HTTP response for reboot request.
+    """
+    try:
+        log_info("Manual reboot requested", "SYSTEM")
+
+        # Return confirmation page with delayed reboot
+        reboot_html = """<!DOCTYPE html><html><head><title>Rebooting Device</title></head><body>
+<h1>DEVICE REBOOT INITIATED</h1>
+
+<h2>Reboot Status</h2>
+<p><strong>Status:</strong> Device will restart in 3 seconds...<br>
+<strong>Expected downtime:</strong> 10-15 seconds<br>
+<strong>Reconnection:</strong> Device will reconnect to WiFi automatically</p>
+
+<h2>Important</h2>
+<p>• Device will be temporarily unavailable<br>
+• All current connections will be lost<br>
+• Refresh this page after 15 seconds to reconnect</p>
+
+<h2>Links</h2>
+<p><a href="/">Return to Dashboard</a> (available after reboot)</p>
+</body></html>"""
+
+        # Schedule reboot after response is sent
+        import _thread
+        def delayed_reboot():
+            time.sleep(3)
+            log_info("Executing manual reboot", "SYSTEM")
+            import machine
+            machine.reset()
+
+        try:
+            _thread.start_new_thread(delayed_reboot, ())
+        except:
+            # Fallback if threading not available
+            pass
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{reboot_html}"
+
+    except Exception as e:
+        log_error(f"Reboot request failed: {e}", "SYSTEM")
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>Reboot Failed</title></head><body><h1>REBOOT FAILED</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p></body></html>"
+
+
 def perform_immediate_update():
     """
     Perform immediate OTA update with minimal memory usage.
@@ -484,6 +533,11 @@ def handle_request(cl, request):
             # If update was started, perform it after sending response
             if update_in_progress:
                 perform_immediate_update()
+
+        elif method == "GET" and path == "/reboot":
+            # Manual reboot trigger
+            response = handle_reboot_request()
+            cl.send(response)
 
         elif method == "GET" and path == "/":
             # Root endpoint - dashboard interface
