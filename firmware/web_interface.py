@@ -223,7 +223,7 @@ Showing last 50 entries. Logs cleared on restart.
 def parse_form_data(request):
     """Parse form data from HTTP POST request."""
     MAX_KEY_LEN = 32
-    MAX_VALUE_LEN = 128
+    MAX_VALUE_LEN = 256  # Increased from 128 to 256 to handle longer repo names
     try:
         request_str = request.decode("utf-8")
         body_start = request_str.find("\r\n\r\n")
@@ -238,9 +238,14 @@ def parse_form_data(request):
         for pair in pairs:
             if "=" in pair:
                 key, value = pair.split("=", 1)
-                key = unquote_plus(key)[:MAX_KEY_LEN]
-                value = unquote_plus(value)[:MAX_VALUE_LEN]
-                form_data[key] = value
+                key_decoded = unquote_plus(key)[:MAX_KEY_LEN]
+                value_decoded = unquote_plus(value)[:MAX_VALUE_LEN]
+
+                # Debug logging for repo_name specifically
+                if key_decoded == "repo_name":
+                    print(f"DEBUG FORM: repo_name raw='{value}' decoded='{value_decoded}' len={len(value_decoded)}")
+
+                form_data[key_decoded] = value_decoded
 
         return form_data
     except Exception as e:
