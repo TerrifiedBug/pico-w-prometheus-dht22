@@ -233,17 +233,22 @@ def parse_form_data(request):
         if not form_body:
             return {}
 
+        print(f"DEBUG FORM: Raw form body: '{form_body}'")
+
         form_data = {}
         pairs = form_body.split("&")
+        print(f"DEBUG FORM: Split into {len(pairs)} pairs")
+
         for pair in pairs:
             if "=" in pair:
                 key, value = pair.split("=", 1)
                 key_decoded = unquote_plus(key)[:MAX_KEY_LEN]
                 value_decoded = unquote_plus(value)[:MAX_VALUE_LEN]
 
-
+                print(f"DEBUG FORM: '{key}' = '{value}' -> '{key_decoded}' = '{value_decoded}'")
                 form_data[key_decoded] = value_decoded
 
+        print(f"DEBUG FORM: Final form_data keys: {list(form_data.keys())}")
         return form_data
     except Exception as e:
         log_error(f"Error parsing form data: {e}", "HTTP")
