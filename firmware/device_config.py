@@ -216,9 +216,6 @@ def validate_config_input(form_data):
         branch = form_data.get("branch", "").strip()
         if branch:
             ota_config["github_repo"]["branch"] = branch
-            print(f"DEBUG: Setting branch to '{branch}'")  # Debug logging
-
-    print(f"DEBUG: Final ota_config: {ota_config}")  # Debug logging
 
     return {
         "device": device_config,

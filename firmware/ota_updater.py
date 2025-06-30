@@ -338,7 +338,7 @@ class GitHubOTAUpdater:
 
     def download_update(self, version, release_info=None):
         try:
-            log_info(f"Starting download for {version}", "OTA")
+            log_info(f"Starting staged download for {version}", "OTA")
 
             # Clean temp directory
             try:
@@ -352,15 +352,17 @@ class GitHubOTAUpdater:
             files_to_download = self._discover_firmware_files()
             self.update_files = files_to_download
 
-            log_info(f"Downloading {len(files_to_download)} files", "OTA")
+            log_info(f"Staged download: {len(files_to_download)} files", "OTA")
 
-            # Download each file
+            # Staged download: one file at a time with aggressive cleanup
             for i, filename in enumerate(files_to_download, 1):
-                log_info(f"Downloading {i}/{len(files_to_download)}: {filename}", "OTA")
+                log_info(f"Stage {i}/{len(files_to_download)}: {filename}", "OTA")
 
+                # Aggressive memory cleanup before each download
                 gc.collect()
+                initial_mem = gc.mem_free()
+
                 if not self.download_file(filename, self.temp_dir):
-                    # version.txt is optional since we use Git tags for versioning
                     if filename == "version.txt":
                         log_warn(f"Skipping optional file {filename}", "OTA")
                         continue
@@ -368,14 +370,19 @@ class GitHubOTAUpdater:
                         log_error(f"Failed to download {filename}", "OTA")
                         return False
 
-                log_info(f"Downloaded {filename} ({i}/{len(files_to_download)})", "OTA")
-                time.sleep(0.5)  # Brief delay
+                # Immediate cleanup after each file
+                gc.collect()
+                final_mem = gc.mem_free()
+                log_info(f"Stage {i} complete: {filename} (mem: {initial_mem}->{final_mem})", "OTA")
 
-            log_info(f"Downloaded all {len(files_to_download)} files", "OTA")
+                # Brief pause for memory stabilization
+                time.sleep(0.3)
+
+            log_info(f"Staged download complete: {len(files_to_download)} files", "OTA")
             return True
 
         except Exception as e:
-            log_error(f"Download failed: {e}", "OTA")
+            log_error(f"Staged download failed: {e}", "OTA")
             return False
 
     def create_backup(self, files_to_backup):

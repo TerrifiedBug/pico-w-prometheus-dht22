@@ -241,9 +241,6 @@ def parse_form_data(request):
                 key_decoded = unquote_plus(key)[:MAX_KEY_LEN]
                 value_decoded = unquote_plus(value)[:MAX_VALUE_LEN]
 
-                # Debug logging for repo_name specifically
-                if key_decoded == "repo_name":
-                    print(f"DEBUG FORM: repo_name raw='{value}' decoded='{value_decoded}' len={len(value_decoded)}")
 
                 form_data[key_decoded] = value_decoded
 

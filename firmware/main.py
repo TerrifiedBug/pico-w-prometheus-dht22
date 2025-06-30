@@ -400,17 +400,17 @@ def handle_reboot_request():
 
 def perform_immediate_update():
     """
-    Perform immediate OTA update with minimal memory usage.
+    Perform immediate OTA update with ultra-aggressive memory management.
     """
     global update_in_progress
 
     try:
         log_info("Starting immediate OTA update", "OTA")
 
-        # Force aggressive memory cleanup before OTA
+        # Ultra-aggressive memory cleanup before OTA
         gc.collect()
+        gc.collect()  # Double collection
         initial_mem = gc.mem_free()
-        log_info(f"Memory before OTA: {initial_mem} bytes", "OTA")
 
         # Check for updates again (quick check)
         has_update, new_version, _ = ota_updater.check_for_updates()
@@ -419,32 +419,46 @@ def perform_immediate_update():
             update_in_progress = False
             return
 
-        log_info("Downloading update files...", "OTA")
+        # Clear variables immediately
+        has_update = None
+        gc.collect()
 
-        # Force another garbage collection before download
+        log_info("Starting staged download...", "OTA")
+
+        # Ultra-aggressive cleanup before download
+        gc.collect()
         gc.collect()
         download_mem = gc.mem_free()
-        log_info(f"Memory before download: {download_mem} bytes", "OTA")
 
         download_success = ota_updater.download_update(new_version, None)
 
         if not download_success:
-            log_error("Download failed", "OTA")
+            log_error("Staged download failed", "OTA")
             update_in_progress = False
             return
 
-        log_info("Applying update...", "OTA")
+        # Clear download variables
+        download_success = None
+        gc.collect()
 
-        # Force garbage collection before applying
+        log_info("Applying staged update...", "OTA")
+
+        # Ultra-aggressive cleanup before applying
+        gc.collect()
         gc.collect()
         apply_mem = gc.mem_free()
-        log_info(f"Memory before apply: {apply_mem} bytes", "OTA")
 
         # Apply the update
         apply_success = ota_updater.apply_update(new_version)
 
         if apply_success:
-            log_info("Update completed successfully, device will restart in 2 seconds", "OTA")
+            log_info("Staged update completed, restarting in 2 seconds", "OTA")
+
+            # Final cleanup before restart
+            apply_success = None
+            new_version = None
+            gc.collect()
+
             time.sleep(2)
 
             # Device will restart here
@@ -457,6 +471,8 @@ def perform_immediate_update():
     except Exception as e:
         log_error(f"Immediate update failed: {e}", "OTA")
         update_in_progress = False
+        # Emergency cleanup
+        gc.collect()
 
 
 # HTTP Server Setup and Request Handling
