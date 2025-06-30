@@ -89,7 +89,7 @@ def handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid, reque
 
 <h2>Sensor Status</h2>
 <p><strong>Status:</strong> {"OK" if temp is not None else "FAIL"}<br>
-<strong>Temperature:</strong> {temp if temp is not None else "ERROR"}°C<br>
+<strong>Temperature:</strong> {temp if temp is not None else "ERROR"} C<br>
 <strong>Humidity:</strong> {hum if hum is not None else "ERROR"}%<br>
 <strong>Sensor Pin:</strong> GPIO {SENSOR_CONFIG['pin']}</p>
 

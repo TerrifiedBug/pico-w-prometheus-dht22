@@ -328,9 +328,9 @@ def handle_update_request():
 <strong>Status:</strong> Downloading and applying update...</p>
 
 <h2>Important</h2>
-<p>• Device will restart automatically in 1-2 minutes<br>
-• DO NOT power off the device during update<br>
-• You may lose connection temporarily during restart</p>
+<p>- Device will restart automatically in 1-2 minutes<br>
+- DO NOT power off the device during update<br>
+- You may lose connection temporarily during restart</p>
 
 <h2>Links</h2>
 <p><a href="/health?update=true">Monitor progress</a> | <a href="/">Dashboard</a></p>
