@@ -163,8 +163,18 @@ def validate_config_input(form_data):
 
     device_config["description"] = form_data.get("description", "").strip()
 
-    # OTA configuration
-    ota_config = current_config.get("ota", DEFAULT_CONFIG["ota"].copy())
+    # OTA configuration - create a deep copy to avoid reference issues
+    current_ota = current_config.get("ota", DEFAULT_CONFIG["ota"])
+    ota_config = {
+        "enabled": current_ota.get("enabled", True),
+        "auto_update": current_ota.get("auto_update", True),
+        "update_interval": current_ota.get("update_interval", 1.0),
+        "github_repo": {
+            "owner": current_ota.get("github_repo", {}).get("owner", "TerrifiedBug"),
+            "name": current_ota.get("github_repo", {}).get("name", "pico-w-prometheus-dht22"),
+            "branch": current_ota.get("github_repo", {}).get("branch", "main")
+        }
+    }
 
     # Handle OTA form fields
     if "ota_enabled" in form_data:
@@ -194,6 +204,9 @@ def validate_config_input(form_data):
         branch = form_data.get("branch", "").strip()
         if branch:
             ota_config["github_repo"]["branch"] = branch
+            print(f"DEBUG: Setting branch to '{branch}'")  # Debug logging
+
+    print(f"DEBUG: Final ota_config: {ota_config}")  # Debug logging
 
     return {
         "device": device_config,
