@@ -32,7 +32,7 @@ jobs:
       - name: Determine release type
         id: release_type
         run: |
-          if [[ "${{ steps.version.outputs.version }}" == dev-* ]]; then
+          if [[ "${{ steps.version.outputs.version }}" == dev-* ]] || [[ "${{ steps.version.outputs.version }}" == *-dev ]]; then
             echo "prerelease=true" >> $GITHUB_OUTPUT
             echo "release_name=Development Release ${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
             echo "This is a development release"
@@ -74,61 +74,9 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
+          # Create ultra-minimal release notes to reduce JSON payload size for OTA
           cat > release_notes.md << 'EOF'
-          ## Pico W Prometheus DHT22 Sensor Firmware
-
-          ### 📦 What's Included
-
-          This firmware package contains all files needed to run the Pico W Prometheus DHT22 sensor:
-
-          - **main.py** - Main application and HTTP server
-          - **ota_updater.py** - Over-the-air update functionality
-          - **config.py** - Configuration management
-          - **device_config.py** - Dynamic device configuration
-          - **secrets.py.example** - WiFi credentials template
-          - **version.txt** - Firmware version identifier
-
-          ### 🚀 Installation Instructions
-
-          1. **Flash MicroPython** to your Pico W (if not already done)
-          2. **Download** the firmware zip file below
-          3. **Extract** all files to your Pico W root directory
-          4. **Copy** `secrets.py.example` to `secrets.py` and add your WiFi credentials
-          5. **Restart** your Pico W
-
-          ### 🔧 Configuration
-
-          After installation, visit `http://<pico-ip>/config` to configure:
-          - Device location and name
-          - OTA update settings
-          - GitHub repository settings
-
-          ### 📈 Prometheus Integration
-
-          Add your device to Prometheus configuration:
-
-          ```yaml
-          scrape_configs:
-            - job_name: "pico_sensors"
-              static_configs:
-                - targets: ["<pico-ip>:80"]
-          ```
-
-          Metrics will automatically include location and device labels.
-
-          ### 🔄 OTA Updates
-
-          This firmware supports over-the-air updates:
-          - Configure via web interface at `/config`
-          - Manual updates via `/update` endpoint
-          - Automatic update checking (configurable)
-
-          ### 📚 Documentation
-
-          - [Project README](https://github.com/${{ github.repository }})
-          - [Configuration Guide](https://github.com/${{ github.repository }}/blob/main/docs/README.md)
-          - [Troubleshooting](https://github.com/${{ github.repository }}/blob/main/docs/DYNAMIC_CONFIG_IMPLEMENTATION.md)
-
+          Firmware ${{ steps.version.outputs.version }}
           EOF
 
           # Set output for use in release creation
@@ -168,14 +116,14 @@ jobs:
           echo "**Type:** ${{ steps.release_type.outputs.prerelease == 'true' && 'Development' || 'Production' }}" >> $GITHUB_STEP_SUMMARY
           echo "**Release URL:** https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Assets Created:" >> $GITHUB_STEP_SUMMARY
+          echo "### � Assets Created:" >> $GITHUB_STEP_SUMMARY
           echo "- firmware-${{ steps.version.outputs.version }}.zip (Complete firmware package)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### ✨ Features:" >> $GITHUB_STEP_SUMMARY
           echo "- 🔧 Enhanced configuration system with web interface" >> $GITHUB_STEP_SUMMARY
           echo "- 📊 Memory-efficient logging system (~10KB RAM usage)" >> $GITHUB_STEP_SUMMARY
           echo "- 🔄 Improved OTA updates with detailed progress tracking" >> $GITHUB_STEP_SUMMARY
-          echo "- 📈 Dynamic Prometheus labels for flexible monitoring" >> $GITHUB_STEP_SUMMARY
+          echo "- � Dynamic Prometheus labels for flexible monitoring" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🚀 Next Steps:" >> $GITHUB_STEP_SUMMARY
           echo "1. Test the release on development devices" >> $GITHUB_STEP_SUMMARY

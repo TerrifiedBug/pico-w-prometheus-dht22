@@ -8,34 +8,64 @@ This module connects to WiFi, reads from a DHT22 sensor, and serves metrics
 via an HTTP endpoint for Prometheus scraping.
 """
 
-import socket
+# BOOT PROTECTION: WiFi setup first, before any other imports
+import network
 import time
 from secrets import secrets
 
-import dht
-import network
-import rp2
-from machine import Pin
-import gc
+# Initialize WiFi immediately for recovery access
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
 
-from config import (
-    METRIC_NAMES,
-    METRICS_ENDPOINT,
-    SENSOR_CONFIG,
-    SERVER_CONFIG,
-    WIFI_CONFIG,
-)
-from device_config import get_config_for_metrics
-from logger import log_info, log_warn, log_error, log_debug
+# BOOT PROTECTION: Try to import all modules with fallback to recovery mode
+try:
+    import socket
+    import dht
+    import rp2
+    from machine import Pin
+    import gc
 
-# Import web interface functions
-from web_interface import (
-    handle_root_page,
-    handle_health_check,
-    handle_config_page,
-    handle_config_update,
-    handle_logs_page,
-)
+    from config import (
+        METRIC_NAMES,
+        METRICS_ENDPOINT,
+        SENSOR_CONFIG,
+        SERVER_CONFIG,
+        WIFI_CONFIG,
+    )
+    from device_config import get_config_for_metrics
+    from logger import log_info, log_warn, log_error, log_debug
+
+    # Import web interface functions
+    from web_interface import (
+        handle_root_page,
+        handle_health_check,
+        handle_config_page,
+        handle_config_update,
+        handle_logs_page,
+    )
+
+    print("BOOT: All modules loaded successfully")
+    RECOVERY_MODE = False
+
+except ImportError as e:
+    print(f"BOOT FAILURE: Module import failed: {e}")
+    print("ACTIVATING RECOVERY MODE...")
+    RECOVERY_MODE = True
+
+    # Execute recovery mode
+    exec(open('recovery.py').read())
+    # Recovery mode runs its own server loop, so we exit here
+    exit()
+
+except Exception as e:
+    print(f"BOOT FAILURE: Unexpected error: {e}")
+    print("ACTIVATING RECOVERY MODE...")
+    RECOVERY_MODE = True
+
+    # Execute recovery mode
+    exec(open('recovery.py').read())
+    # Recovery mode runs its own server loop, so we exit here
+    exit()
 
 # Record boot time using ticks for accurate uptime calculation
 boot_ticks = time.ticks_ms()
@@ -98,9 +128,6 @@ def connect_wifi():
     log_error("WiFi connection timeout", "NETWORK")
     return False
 
-
-wlan = network.WLAN(network.STA_IF)
-wlan.active(True)
 
 # Connect with improved reliability
 if not connect_wifi():
@@ -258,7 +285,7 @@ def get_system_info():
 
 def handle_update_request():
     """
-    Handle OTA update request with immediate execution.
+    Handle OTA update request with immediate execution - minimal HTML with links.
 
     Returns:
         str: HTTP response for update request.
@@ -267,21 +294,25 @@ def handle_update_request():
 
     if not ota_updater:
         log_warn("OTA update requested but OTA not enabled", "OTA")
-        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nOTA not enabled"
+        return "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>OTA Not Enabled</title></head><body><h1>OTA NOT ENABLED</h1><p>Over-the-air updates are disabled.</p><p><a href='/config'>Enable in configuration</a> | <a href='/'>Return home</a></p></body></html>"
 
     if update_in_progress:
         log_info("Update already in progress", "OTA")
-        return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nUpdate already in progress\n\nDevice will restart automatically when complete."
+        return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>Update In Progress</title></head><body><h1>UPDATE IN PROGRESS</h1><p>An update is already running.<br>Device will restart automatically when complete.</p><p><a href='/health?update=true'>Monitor progress</a></p></body></html>"
 
     try:
         log_info("Manual update requested", "OTA")
 
         # Check for available updates
-        has_update, new_version, _ = ota_updater.check_for_updates()
+        has_update, new_version, error_info = ota_updater.check_for_updates()
 
         if not has_update:
-            log_info("No updates available", "OTA")
-            return "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nNo updates available\n\nCurrent version is up to date."
+            if error_info == "REPO_NOT_FOUND":
+                log_error("Repository not found", "OTA")
+                return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>Repository Not Found</title></head><body><h1>REPOSITORY NOT FOUND</h1><p>The configured repository could not be found. Please check your repository settings.</p><p><a href='/config'>Update Configuration</a> | <a href='/'>Return home</a></p></body></html>"
+            else:
+                log_info("No updates available", "OTA")
+                return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>No Updates</title></head><body><h1>NO UPDATES AVAILABLE</h1><p>Current version is up to date.</p><p><a href='/health'>View system status</a> | <a href='/'>Return home</a></p></body></html>"
 
         # Get current version for display
         current_version = ota_updater.get_current_version()
@@ -291,42 +322,95 @@ def handle_update_request():
 
         log_info(f"Starting immediate update: {current_version} -> {new_version}", "OTA")
 
-        # Return simple response and start update
-        response_text = f"""Update Started Successfully!
+        # Return minimal HTML response with links
+        update_html = f"""<!DOCTYPE html><html><head><title>Update Started</title></head><body>
+<h1>UPDATE STARTED SUCCESSFULLY</h1>
 
-Current Version: {current_version}
-Target Version: {new_version}
+<h2>Update Details</h2>
+<p><strong>Current Version:</strong> {current_version}<br>
+<strong>Target Version:</strong> {new_version}<br>
+<strong>Status:</strong> Downloading and applying update...</p>
 
-The update is now running in the background.
-Device will restart automatically in 1-2 minutes.
+<h2>Important</h2>
+<p>- Device will restart automatically in 1-2 minutes<br>
+- DO NOT power off the device during update<br>
+- You may lose connection temporarily during restart</p>
 
-After restart, visit /health to confirm the new version.
-
-DO NOT power off the device during update!
-"""
+<h2>Links</h2>
+<p><a href="/health?update=true">Monitor progress</a> | <a href="/">Dashboard</a></p>
+</body></html>"""
 
         # Start update in background (will happen after response is sent)
-        return f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{response_text}"
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{update_html}"
 
     except Exception as e:
         update_in_progress = False
         log_error(f"Update request failed: {e}", "OTA")
-        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nUpdate failed: {e}"
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>Update Failed</title></head><body><h1>UPDATE FAILED</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p></body></html>"
+
+
+def handle_reboot_request():
+    """
+    Handle manual reboot request with confirmation page.
+
+    Returns:
+        str: HTTP response for reboot request.
+    """
+    try:
+        log_info("Manual reboot requested", "SYSTEM")
+
+        # Return confirmation page with delayed reboot
+        reboot_html = """<!DOCTYPE html><html><head><title>Rebooting Device</title></head><body>
+<h1>DEVICE REBOOT INITIATED</h1>
+
+<h2>Reboot Status</h2>
+<p><strong>Status:</strong> Device will restart in 3 seconds...<br>
+<strong>Expected downtime:</strong> 10-15 seconds<br>
+<strong>Reconnection:</strong> Device will reconnect to WiFi automatically</p>
+
+<h2>Important</h2>
+<p>• Device will be temporarily unavailable<br>
+• All current connections will be lost<br>
+• Refresh this page after 15 seconds to reconnect</p>
+
+<h2>Links</h2>
+<p><a href="/">Return to Dashboard</a> (available after reboot)</p>
+</body></html>"""
+
+        # Schedule reboot after response is sent
+        import _thread
+        def delayed_reboot():
+            time.sleep(3)
+            log_info("Executing manual reboot", "SYSTEM")
+            import machine
+            machine.reset()
+
+        try:
+            _thread.start_new_thread(delayed_reboot, ())
+        except:
+            # Fallback if threading not available
+            pass
+
+        return f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n{reboot_html}"
+
+    except Exception as e:
+        log_error(f"Reboot request failed: {e}", "SYSTEM")
+        return f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>Reboot Failed</title></head><body><h1>REBOOT FAILED</h1><p>Error: {e}</p><p><a href='/'>Return home</a></p></body></html>"
 
 
 def perform_immediate_update():
     """
-    Perform immediate OTA update with minimal memory usage.
+    Perform immediate OTA update with ultra-aggressive memory management.
     """
     global update_in_progress
 
     try:
         log_info("Starting immediate OTA update", "OTA")
 
-        # Force aggressive memory cleanup before OTA
+        # Ultra-aggressive memory cleanup before OTA
         gc.collect()
+        gc.collect()  # Double collection
         initial_mem = gc.mem_free()
-        log_info(f"Memory before OTA: {initial_mem} bytes", "OTA")
 
         # Check for updates again (quick check)
         has_update, new_version, _ = ota_updater.check_for_updates()
@@ -335,32 +419,46 @@ def perform_immediate_update():
             update_in_progress = False
             return
 
-        log_info("Downloading update files...", "OTA")
+        # Clear variables immediately
+        has_update = None
+        gc.collect()
 
-        # Force another garbage collection before download
+        log_info("Starting staged download...", "OTA")
+
+        # Ultra-aggressive cleanup before download
+        gc.collect()
         gc.collect()
         download_mem = gc.mem_free()
-        log_info(f"Memory before download: {download_mem} bytes", "OTA")
 
         download_success = ota_updater.download_update(new_version, None)
 
         if not download_success:
-            log_error("Download failed", "OTA")
+            log_error("Staged download failed", "OTA")
             update_in_progress = False
             return
 
-        log_info("Applying update...", "OTA")
+        # Clear download variables
+        download_success = None
+        gc.collect()
 
-        # Force garbage collection before applying
+        log_info("Applying staged update...", "OTA")
+
+        # Ultra-aggressive cleanup before applying
+        gc.collect()
         gc.collect()
         apply_mem = gc.mem_free()
-        log_info(f"Memory before apply: {apply_mem} bytes", "OTA")
 
         # Apply the update
         apply_success = ota_updater.apply_update(new_version)
 
         if apply_success:
-            log_info("Update completed successfully, device will restart in 2 seconds", "OTA")
+            log_info("Staged update completed, restarting in 2 seconds", "OTA")
+
+            # Final cleanup before restart
+            apply_success = None
+            new_version = None
+            gc.collect()
+
             time.sleep(2)
 
             # Device will restart here
@@ -373,6 +471,8 @@ def perform_immediate_update():
     except Exception as e:
         log_error(f"Immediate update failed: {e}", "OTA")
         update_in_progress = False
+        # Emergency cleanup
+        gc.collect()
 
 
 # HTTP Server Setup and Request Handling
@@ -423,7 +523,7 @@ def handle_request(cl, request):
             # Health check endpoint
             sensor_data = read_dht22()
             system_info = get_system_info()
-            response = handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid)
+            response = handle_health_check(sensor_data, system_info, ota_updater, wlan, ssid, request_str)
             cl.send(response)
 
         elif method == "GET" and path == "/config":
@@ -433,7 +533,7 @@ def handle_request(cl, request):
 
         elif method == "POST" and path == "/config":
             # Configuration update
-            response = handle_config_update(request)
+            response = handle_config_update(request, ota_updater)
             cl.send(response)
 
         elif method == "GET" and path == "/logs":
@@ -449,6 +549,11 @@ def handle_request(cl, request):
             # If update was started, perform it after sending response
             if update_in_progress:
                 perform_immediate_update()
+
+        elif method == "GET" and path == "/reboot":
+            # Manual reboot trigger
+            response = handle_reboot_request()
+            cl.send(response)
 
         elif method == "GET" and path == "/":
             # Root endpoint - dashboard interface
@@ -495,7 +600,32 @@ def run_server():
             # Handle request
             try:
                 cl.settimeout(10.0)  # 10 second timeout for client operations
-                request = cl.recv(1024)
+
+                # Read request with larger buffer for form data
+                request = cl.recv(2048)  # Increased from 1024 to 2048 bytes
+
+                # For POST requests, we might need to read more data
+                if request and b'POST' in request and b'Content-Length:' in request:
+                    try:
+                        # Extract Content-Length header
+                        request_str = request.decode('utf-8')
+                        for line in request_str.split('\r\n'):
+                            if line.lower().startswith('content-length:'):
+                                content_length = int(line.split(':')[1].strip())
+
+                                # Check if we need to read more data
+                                body_start = request_str.find('\r\n\r\n')
+                                if body_start != -1:
+                                    current_body_length = len(request) - (body_start + 4)
+                                    if current_body_length < content_length:
+                                        # Read remaining data
+                                        remaining = content_length - current_body_length
+                                        additional_data = cl.recv(remaining)
+                                        request += additional_data
+                                break
+                    except:
+                        pass  # If parsing fails, use what we have
+
                 if request:
                     handle_request(cl, request)
             except Exception as e:

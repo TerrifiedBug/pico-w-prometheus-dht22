@@ -15,10 +15,23 @@ class GitHubOTAUpdater:
     def __init__(self):
         log_info("Initializing minimal OTA updater", "OTA")
 
-        # Hardcoded configuration for minimal size
-        self.repo_owner = "TerrifiedBug"
-        self.repo_name = "pico-w-prometheus-dht22"
-        self.branch = "main"
+        # Load configuration from device config instead of hardcoding
+        try:
+            from device_config import get_ota_config
+            ota_config = get_ota_config()
+            github_repo = ota_config.get("github_repo", {})
+
+            self.repo_owner = github_repo.get("owner", "TerrifiedBug")
+            self.repo_name = github_repo.get("name", "pico-w-prometheus-dht22")
+            self.branch = github_repo.get("branch", "main")
+
+            log_info(f"OTA config loaded: {self.repo_owner}/{self.repo_name} (branch: {self.branch})", "OTA")
+        except Exception as e:
+            # Fallback to hardcoded values if config fails
+            log_warn(f"Failed to load OTA config, using defaults: {e}", "OTA")
+            self.repo_owner = "TerrifiedBug"
+            self.repo_name = "pico-w-prometheus-dht22"
+            self.branch = "main"
 
         # GitHub URLs
         self.api_base = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}"
@@ -34,7 +47,36 @@ class GitHubOTAUpdater:
         except OSError:
             pass
 
-        log_info(f"Minimal OTA ready: {self.repo_owner}/{self.repo_name}", "OTA")
+        log_info(f"Minimal OTA ready: {self.repo_owner}/{self.repo_name} (branch: {self.branch})", "OTA")
+
+    def reload_config(self):
+        """Reload configuration directly from device config file to pick up changes without restart."""
+        try:
+            log_info("Reloading OTA configuration", "OTA")
+
+            # Import and reload the config directly from file
+            from device_config import load_device_config
+            config = load_device_config()
+            ota_config = config.get("ota", {})
+            github_repo = ota_config.get("github_repo", {})
+
+            old_branch = self.branch
+            self.repo_owner = github_repo.get("owner", "TerrifiedBug")
+            self.repo_name = github_repo.get("name", "pico-w-prometheus-dht22")
+            self.branch = github_repo.get("branch", "main")
+
+            # Update URLs with new config
+            self.api_base = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}"
+            self.raw_base = f"https://raw.githubusercontent.com/{self.repo_owner}/{self.repo_name}"
+
+            if old_branch != self.branch:
+                log_info(f"Branch changed: {old_branch} -> {self.branch}", "OTA")
+
+            log_info(f"OTA config reloaded: {self.repo_owner}/{self.repo_name} (branch: {self.branch})", "OTA")
+            return True
+        except Exception as e:
+            log_error(f"Failed to reload OTA config: {e}", "OTA")
+            return False
 
     def get_current_version(self):
         try:
@@ -95,22 +137,59 @@ class GitHubOTAUpdater:
             log_info("Checking for updates", "OTA")
             current_version = self.get_current_version()
 
-            url = f"{self.api_base}/releases/latest"
+            # Determine release channel based on branch
+            if self.branch == "dev":
+                # For dev branch, get only the latest release and check if it's a pre-release
+                url = f"{self.api_base}/releases?per_page=1"
+                log_info("Checking for dev releases (pre-releases)", "OTA")
+            else:
+                # For main branch, use latest stable release
+                url = f"{self.api_base}/releases/latest"
+                log_info("Checking for stable releases", "OTA")
+
             success, response_or_error = self._make_request(url)
 
             if not success:
                 log_error(f"Update check failed: {response_or_error}", "OTA")
+                # Check if it's a 404 error (repository not found)
+                if "HTTP 404" in str(response_or_error):
+                    return False, None, "REPO_NOT_FOUND"
                 return False, None, None
 
             try:
-                release_data = response_or_error.json()
-                response_or_error.close()
+                if self.branch == "dev":
+                    # Parse releases list (only 1 release due to per_page=1)
+                    releases_data = response_or_error.json()
+                    response_or_error.close()
+
+                    # Check if we got any releases
+                    if not releases_data or len(releases_data) == 0:
+                        log_info("No releases found", "OTA")
+                        return False, None, None
+
+                    # Get the first (and only) release
+                    latest_release = releases_data[0]
+
+                    # Check if it's a pre-release (dev release)
+                    if not latest_release.get("prerelease", False):
+                        log_info("Latest release is not a dev release", "OTA")
+                        return False, None, None
+
+                    release_data = latest_release
+                    latest_version = release_data["tag_name"]
+                    log_info(f"Found latest dev release: {latest_version}", "OTA")
+                else:
+                    # Parse single latest release
+                    release_data = response_or_error.json()
+                    response_or_error.close()
+                    latest_version = release_data["tag_name"]
+                    log_info(f"Found latest stable release: {latest_version}", "OTA")
+
             except Exception as e:
                 log_error(f"JSON parse failed: {e}", "OTA")
                 response_or_error.close()
                 return False, None, None
 
-            latest_version = release_data["tag_name"]
             has_update = latest_version != current_version
 
             if has_update:
@@ -262,7 +341,7 @@ class GitHubOTAUpdater:
 
     def download_update(self, version, release_info=None):
         try:
-            log_info(f"Starting download for {version}", "OTA")
+            log_info(f"Starting staged download for {version}", "OTA")
 
             # Clean temp directory
             try:
@@ -276,32 +355,132 @@ class GitHubOTAUpdater:
             files_to_download = self._discover_firmware_files()
             self.update_files = files_to_download
 
-            log_info(f"Downloading {len(files_to_download)} files", "OTA")
+            log_info(f"Staged download: {len(files_to_download)} files", "OTA")
 
-            # Download each file
+            # Staged download: one file at a time with aggressive cleanup
             for i, filename in enumerate(files_to_download, 1):
-                log_info(f"Downloading {i}/{len(files_to_download)}: {filename}", "OTA")
+                log_info(f"Stage {i}/{len(files_to_download)}: {filename}", "OTA")
 
+                # Aggressive memory cleanup before each download
                 gc.collect()
+                initial_mem = gc.mem_free()
+
                 if not self.download_file(filename, self.temp_dir):
-                    log_error(f"Failed to download {filename}", "OTA")
-                    return False
+                    if filename == "version.txt":
+                        log_warn(f"Skipping optional file {filename}", "OTA")
+                        continue
+                    else:
+                        log_error(f"Failed to download {filename}", "OTA")
+                        return False
 
-                log_info(f"Downloaded {filename} ({i}/{len(files_to_download)})", "OTA")
-                time.sleep(0.5)  # Brief delay
+                # Immediate cleanup after each file
+                gc.collect()
+                final_mem = gc.mem_free()
+                log_info(f"Stage {i} complete: {filename} (mem: {initial_mem}->{final_mem})", "OTA")
 
-            log_info(f"Downloaded all {len(files_to_download)} files", "OTA")
+                # Brief pause for memory stabilization
+                time.sleep(0.3)
+
+            log_info(f"Staged download complete: {len(files_to_download)} files", "OTA")
             return True
 
         except Exception as e:
-            log_error(f"Download failed: {e}", "OTA")
+            log_error(f"Staged download failed: {e}", "OTA")
+            return False
+
+    def create_backup(self, files_to_backup):
+        """Create backup of critical files before update."""
+        try:
+            log_info("Creating backup of current files", "OTA")
+            backup_count = 0
+
+            for filename in files_to_backup:
+                try:
+                    # Check if original file exists
+                    os.stat(filename)
+
+                    # Create backup
+                    backup_name = f"{filename}.bak"
+
+                    # Read original file
+                    with open(filename, "r") as src:
+                        content = src.read()
+
+                    # Write backup
+                    with open(backup_name, "w") as dst:
+                        dst.write(content)
+
+                    backup_count += 1
+                    log_info(f"Backed up {filename}", "OTA")
+
+                except OSError:
+                    log_warn(f"Could not backup {filename} (file not found)", "OTA")
+
+            log_info(f"Created {backup_count} backup files", "OTA")
+            return backup_count > 0
+
+        except Exception as e:
+            log_error(f"Backup creation failed: {e}", "OTA")
+            return False
+
+    def validate_update_files(self):
+        """Validate that downloaded files can be imported."""
+        try:
+            log_info("Validating downloaded files", "OTA")
+
+            # Test critical files for basic syntax
+            critical_files = ["main.py", "web_interface.py", "config.py"]
+
+            for filename in critical_files:
+                temp_path = f"{self.temp_dir}/{filename}"
+                try:
+                    os.stat(temp_path)
+
+                    # Basic validation - check file is not empty and not HTML error page
+                    with open(temp_path, "r") as f:
+                        content = f.read()
+
+                    if len(content) < 100:  # Too small
+                        log_error(f"{filename} too small ({len(content)} bytes)", "OTA")
+                        return False
+
+                    if content.strip().startswith('<!DOCTYPE html>'):
+                        log_error(f"{filename} is HTML error page", "OTA")
+                        return False
+
+                    # Check for imports, but exclude configuration files that don't need them
+                    if filename.endswith('.py') and filename not in ['config.py', 'secrets.py']:
+                        if 'import' not in content:
+                            log_error(f"{filename} missing imports", "OTA")
+                            return False
+
+                    log_info(f"Validated {filename} ({len(content)} bytes)", "OTA")
+
+                except OSError:
+                    log_warn(f"Could not validate {filename}", "OTA")
+
+            log_info("File validation completed", "OTA")
+            return True
+
+        except Exception as e:
+            log_error(f"Validation failed: {e}", "OTA")
             return False
 
     def apply_update(self, version):
         try:
             log_info(f"Applying update to {version}", "OTA")
 
-            # Move temp files to main location (no backup - direct overwrite)
+            # Step 1: Create backups of existing files
+            if not self.create_backup(self.update_files):
+                log_warn("Backup creation failed, proceeding anyway", "OTA")
+
+            # Step 2: Validate downloaded files
+            if not self.validate_update_files():
+                log_error("File validation failed, aborting update", "OTA")
+                return False
+
+            # Step 3: Apply updates with error handling
+            updated_files = []
             for filename in self.update_files:
                 temp_path = f"{self.temp_dir}/{filename}"
                 try:
@@ -313,14 +492,20 @@ class GitHubOTAUpdater:
                     with open(filename, "w") as dst:
                         dst.write(content)
 
+                    updated_files.append(filename)
                     log_info(f"Updated {filename}", "OTA")
                 except OSError:
                     log_warn(f"Skipping missing {filename}", "OTA")
 
-            # Update version
-            self.set_current_version(version)
+            # Step 4: Update version only if files were updated
+            if updated_files:
+                self.set_current_version(version)
+                log_info(f"Updated {len(updated_files)} files to version {version}", "OTA")
+            else:
+                log_error("No files were updated", "OTA")
+                return False
 
-            # Clean temp directory
+            # Step 5: Clean temp directory
             try:
                 for filename in os.listdir(self.temp_dir):
                     filepath = f"{self.temp_dir}/{filename}"
@@ -328,11 +513,47 @@ class GitHubOTAUpdater:
             except OSError:
                 pass
 
-            log_info(f"Update to {version} completed", "OTA")
+            log_info(f"Update to {version} completed successfully", "OTA")
             return True
 
         except Exception as e:
             log_error(f"Apply failed: {e}", "OTA")
+            return False
+
+    def rollback_update(self):
+        """Rollback to backup files if available."""
+        try:
+            log_info("Rolling back to backup files", "OTA")
+            rollback_count = 0
+
+            # Find and restore backup files
+            for filename in os.listdir():
+                if filename.endswith('.bak'):
+                    original_name = filename[:-4]  # Remove .bak extension
+                    try:
+                        # Read backup content
+                        with open(filename, "r") as src:
+                            content = src.read()
+
+                        # Restore original file
+                        with open(original_name, "w") as dst:
+                            dst.write(content)
+
+                        rollback_count += 1
+                        log_info(f"Restored {original_name} from backup", "OTA")
+
+                    except Exception as e:
+                        log_error(f"Failed to restore {original_name}: {e}", "OTA")
+
+            if rollback_count > 0:
+                log_info(f"Rollback completed: restored {rollback_count} files", "OTA")
+                return True
+            else:
+                log_warn("No backup files found for rollback", "OTA")
+                return False
+
+        except Exception as e:
+            log_error(f"Rollback failed: {e}", "OTA")
             return False
 
     def perform_update(self):

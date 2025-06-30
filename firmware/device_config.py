@@ -57,7 +57,19 @@ def load_device_config():
         # Ensure nested OTA keys exist
         for key in DEFAULT_CONFIG["ota"]:
             if key not in config["ota"]:
-                config["ota"][key] = DEFAULT_CONFIG["ota"][key]
+                if key == "github_repo":
+                    # Handle nested github_repo structure carefully
+                    config["ota"][key] = {}
+                    for repo_key in DEFAULT_CONFIG["ota"]["github_repo"]:
+                        config["ota"][key][repo_key] = DEFAULT_CONFIG["ota"]["github_repo"][repo_key]
+                else:
+                    config["ota"][key] = DEFAULT_CONFIG["ota"][key]
+
+        # Ensure github_repo nested keys exist without overwriting existing values
+        if "github_repo" in config["ota"]:
+            for repo_key in DEFAULT_CONFIG["ota"]["github_repo"]:
+                if repo_key not in config["ota"]["github_repo"]:
+                    config["ota"]["github_repo"][repo_key] = DEFAULT_CONFIG["ota"]["github_repo"][repo_key]
 
         print(f"Device config loaded: {config['device']['location']}/{config['device']['name']}")
         return config
@@ -163,8 +175,18 @@ def validate_config_input(form_data):
 
     device_config["description"] = form_data.get("description", "").strip()
 
-    # OTA configuration
-    ota_config = current_config.get("ota", DEFAULT_CONFIG["ota"].copy())
+    # OTA configuration - create a deep copy to avoid reference issues
+    current_ota = current_config.get("ota", DEFAULT_CONFIG["ota"])
+    ota_config = {
+        "enabled": current_ota.get("enabled", True),
+        "auto_update": current_ota.get("auto_update", True),
+        "update_interval": current_ota.get("update_interval", 1.0),
+        "github_repo": {
+            "owner": current_ota.get("github_repo", {}).get("owner", "TerrifiedBug"),
+            "name": current_ota.get("github_repo", {}).get("name", "pico-w-prometheus-dht22"),
+            "branch": current_ota.get("github_repo", {}).get("branch", "main")
+        }
+    }
 
     # Handle OTA form fields
     if "ota_enabled" in form_data:
