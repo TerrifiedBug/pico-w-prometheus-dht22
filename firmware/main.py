@@ -304,11 +304,15 @@ def handle_update_request():
         log_info("Manual update requested", "OTA")
 
         # Check for available updates
-        has_update, new_version, _ = ota_updater.check_for_updates()
+        has_update, new_version, error_info = ota_updater.check_for_updates()
 
         if not has_update:
-            log_info("No updates available", "OTA")
-            return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>No Updates</title></head><body><h1>NO UPDATES AVAILABLE</h1><p>Current version is up to date.</p><p><a href='/health'>View system status</a> | <a href='/'>Return home</a></p></body></html>"
+            if error_info == "REPO_NOT_FOUND":
+                log_error("Repository not found", "OTA")
+                return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>Repository Not Found</title></head><body><h1>REPOSITORY NOT FOUND</h1><p>The configured repository could not be found. Please check your repository settings.</p><p><a href='/config'>Update Configuration</a> | <a href='/'>Return home</a></p></body></html>"
+            else:
+                log_info("No updates available", "OTA")
+                return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html><html><head><title>No Updates</title></head><body><h1>NO UPDATES AVAILABLE</h1><p>Current version is up to date.</p><p><a href='/health'>View system status</a> | <a href='/'>Return home</a></p></body></html>"
 
         # Get current version for display
         current_version = ota_updater.get_current_version()
@@ -464,7 +468,7 @@ def handle_request(cl, request):
 
         elif method == "POST" and path == "/config":
             # Configuration update
-            response = handle_config_update(request)
+            response = handle_config_update(request, ota_updater)
             cl.send(response)
 
         elif method == "GET" and path == "/logs":

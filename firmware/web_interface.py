@@ -248,7 +248,7 @@ def parse_form_data(request):
         return {}
 
 
-def handle_config_update(request):
+def handle_config_update(request, ota_updater=None):
     """Handle configuration update from POST request."""
     try:
         form_data = parse_form_data(request)
@@ -258,6 +258,17 @@ def handle_config_update(request):
 
         if save_device_config(config):
             log_info(f"Config updated: {config['device']['location']}/{config['device']['name']}", "CONFIG")
+
+            # Reload OTA config if OTA updater exists and config contains OTA changes
+            if ota_updater and "ota" in config:
+                try:
+                    if ota_updater.reload_config():
+                        log_info("OTA configuration reloaded successfully", "CONFIG")
+                    else:
+                        log_warn("OTA configuration reload failed", "CONFIG")
+                except Exception as e:
+                    log_error(f"Error reloading OTA config: {e}", "CONFIG")
+
             return "HTTP/1.0 302 Found\r\nLocation: /config\r\n\r\n"
         else:
             log_error("Failed to save configuration", "CONFIG")

@@ -49,6 +49,32 @@ class GitHubOTAUpdater:
 
         log_info(f"Minimal OTA ready: {self.repo_owner}/{self.repo_name} (branch: {self.branch})", "OTA")
 
+    def reload_config(self):
+        """Reload configuration from device config file to pick up changes without restart."""
+        try:
+            log_info("Reloading OTA configuration", "OTA")
+            from device_config import get_ota_config
+            ota_config = get_ota_config()
+            github_repo = ota_config.get("github_repo", {})
+
+            old_branch = self.branch
+            self.repo_owner = github_repo.get("owner", "TerrifiedBug")
+            self.repo_name = github_repo.get("name", "pico-w-prometheus-dht22")
+            self.branch = github_repo.get("branch", "main")
+
+            # Update URLs with new config
+            self.api_base = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}"
+            self.raw_base = f"https://raw.githubusercontent.com/{self.repo_owner}/{self.repo_name}"
+
+            if old_branch != self.branch:
+                log_info(f"Branch changed: {old_branch} -> {self.branch}", "OTA")
+
+            log_info(f"OTA config reloaded: {self.repo_owner}/{self.repo_name} (branch: {self.branch})", "OTA")
+            return True
+        except Exception as e:
+            log_error(f"Failed to reload OTA config: {e}", "OTA")
+            return False
+
     def get_current_version(self):
         try:
             with open("version.txt", "r") as f:
@@ -122,6 +148,9 @@ class GitHubOTAUpdater:
 
             if not success:
                 log_error(f"Update check failed: {response_or_error}", "OTA")
+                # Check if it's a 404 error (repository not found)
+                if "HTTP 404" in str(response_or_error):
+                    return False, None, "REPO_NOT_FOUND"
                 return False, None, None
 
             try:
