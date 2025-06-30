@@ -50,11 +50,14 @@ class GitHubOTAUpdater:
         log_info(f"Minimal OTA ready: {self.repo_owner}/{self.repo_name} (branch: {self.branch})", "OTA")
 
     def reload_config(self):
-        """Reload configuration from device config file to pick up changes without restart."""
+        """Reload configuration directly from device config file to pick up changes without restart."""
         try:
             log_info("Reloading OTA configuration", "OTA")
-            from device_config import get_ota_config
-            ota_config = get_ota_config()
+
+            # Import and reload the config directly from file
+            from device_config import load_device_config
+            config = load_device_config()
+            ota_config = config.get("ota", {})
             github_repo = ota_config.get("github_repo", {})
 
             old_branch = self.branch
